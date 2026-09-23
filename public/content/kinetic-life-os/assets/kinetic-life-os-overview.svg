@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="920" viewBox="0 0 1440 920" role="img" aria-labelledby="title desc">
+  <title id="title">Kinetic Life OS product overview</title>
+  <desc id="desc">A calm personal dashboard showing priorities, progress, and daily work.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#2b322b" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="brand" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#dff4d4"/>
+      <stop offset="1" stop-color="#eef8e8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="920" fill="#f5f7f4"/>
+  <rect x="20" y="20" width="1400" height="880" rx="26" fill="#ffffff" stroke="#d8ded9" stroke-width="2"/>
+  <rect x="20" y="20" width="250" height="880" rx="26" fill="#f8faf7"/>
+  <path d="M270 20v880" stroke="#d8ded9" stroke-width="2"/>
+  <circle cx="76" cy="83" r="28" fill="#9be568"/>
+  <path d="M64 94 88 70M77 70h11v11" fill="none" stroke="#1f5b1c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="120" y="82" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="27" font-weight="700" fill="#151a16">个人工作台</text>
+  <text x="120" y="110" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="13" letter-spacing="2" fill="#68726c">LIFE OS · 本地版</text>
+  <rect x="42" y="153" width="206" height="54" rx="14" fill="#e4f4da"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="18" fill="#39423c">
+    <text x="72" y="188">⌂　总览</text>
+    <text x="72" y="246">▱　工作计划</text>
+    <text x="72" y="304">♡　健康管理</text>
+    <text x="72" y="362">⌁　健身计划</text>
+    <text x="72" y="420">☑　日常提醒</text>
+    <text x="72" y="478">⚑　日历看板</text>
+    <text x="72" y="536">☷　设置与备份</text>
+  </g>
+  <text x="306" y="75" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="16" fill="#737d76">总览</text>
+  <rect x="1090" y="42" width="272" height="48" rx="14" fill="#ffffff" stroke="#d8ded9" stroke-width="2"/>
+  <text x="1120" y="73" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="17" fill="#a0aaa3">⌕　搜索项目…</text>
+  <text x="306" y="154" font-family="Georgia,'Songti SC','STSong',serif" font-size="62" fill="#151a16">生活总览</text>
+  <path d="M306 182h1056" stroke="#d8ded9" stroke-width="2"/>
+  <g filter="url(#shadow)">
+    <rect x="306" y="218" width="516" height="458" rx="24" fill="#ffffff" stroke="#d8ded9" stroke-width="2"/>
+    <rect x="850" y="218" width="512" height="458" rx="24" fill="#ffffff" stroke="#d8ded9" stroke-width="2"/>
+  </g>
+  <g font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+    <text x="336" y="270" font-family="Georgia,'Songti SC','STSong',serif" font-size="34" fill="#151a16">近期重点</text>
+    <text x="336" y="301" font-size="17" fill="#68726c">当前阶段的行动、目的与下一步</text>
+    <rect x="744" y="250" width="54" height="54" rx="14" fill="#e4f4da"/>
+    <text x="757" y="284" font-size="16" font-weight="700" fill="#346e25">编辑</text>
+    <path d="M353 350v245" stroke="#d6ddd7" stroke-width="2"/>
+    <circle cx="353" cy="350" r="8" fill="#347c20"/>
+    <circle cx="353" cy="435" r="8" fill="#c7d0c9"/>
+    <circle cx="353" cy="520" r="8" fill="#c7d0c9"/>
+    <text x="380" y="354" font-size="16" font-weight="700" fill="#347c20">现在</text>
+    <text x="380" y="390" font-size="23" font-weight="700" fill="#151a16">完成一次投递或跟进</text>
+    <text x="380" y="420" font-size="16" fill="#68726c">用一个真实行动降低求职焦虑，并记录岗位与后续日期。</text>
+    <text x="380" y="439" font-size="16" font-weight="700" fill="#347c20">接下来</text>
+    <text x="380" y="475" font-size="23" font-weight="700" fill="#151a16">整理博士方向文本并发送第一封邮件</text>
+    <text x="380" y="505" font-size="16" fill="#68726c">先说明问题、对象和方法；发送后记录回复与下一步。</text>
+    <text x="380" y="524" font-size="16" font-weight="700" fill="#347c20">随后</text>
+    <text x="380" y="560" font-size="23" font-weight="700" fill="#151a16">完成个人房间的首个可见区块</text>
+    <text x="380" y="590" font-size="16" fill="#68726c">先完成空间建模和首屏，不等待职业定位完全确定。</text>
+
+    <text x="880" y="270" font-family="Georgia,'Songti SC','STSong',serif" font-size="34" fill="#151a16">进度概览</text>
+    <text x="880" y="301" font-size="17" fill="#68726c">工作推进与年度方向</text>
+    <rect x="1284" y="250" width="54" height="54" rx="14" fill="#e4f4da"/>
+    <text x="1297" y="284" font-size="16" font-weight="700" fill="#346e25">编辑</text>
+    <rect x="880" y="334" width="232" height="138" rx="20" fill="#f1f4f0"/>
+    <rect x="1130" y="334" width="208" height="138" rx="20" fill="#f1f4f0"/>
+    <text x="924" y="374" font-size="16" fill="#68726c">本月工作完成率</text>
+    <text x="958" y="425" font-size="42" font-weight="700" fill="#151a16">0%</text>
+    <text x="970" y="450" font-size="14" fill="#68726c">工作事项</text>
+    <text x="1162" y="374" font-size="16" fill="#68726c">年度目标完成率</text>
+    <text x="1192" y="425" font-size="42" font-weight="700" fill="#151a16">17%</text>
+    <text x="1198" y="450" font-size="14" fill="#68726c">平均进度</text>
+    <path d="M880 510h458" stroke="#d8ded9" stroke-width="2"/>
+    <text x="880" y="560" font-family="Georgia,'Songti SC','STSong',serif" font-size="32" fill="#151a16">年度目标</text>
+    <text x="1182" y="560" font-size="15" fill="#68726c">位于本月工作进度下方</text>
+    <text x="880" y="606" font-size="20" font-weight="700" fill="#151a16">明确博士方向并开始沟通</text>
+    <text x="1278" y="606" font-size="20" font-weight="700" fill="#151a16">25%</text>
+    <rect x="880" y="624" width="458" height="9" rx="5" fill="#e0e6e1"/>
+    <rect x="880" y="624" width="115" height="9" rx="5" fill="#347c20"/>
+  </g>
+  <text x="306" y="832" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="13" letter-spacing="2" fill="#869089">KINETIC LIFE OS · 本地保存</text>
+</svg>

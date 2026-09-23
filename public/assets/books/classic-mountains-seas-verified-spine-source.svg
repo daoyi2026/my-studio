@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="768" viewBox="0 0 128 768">
+<rect width="128" height="768" fill="#302c24"/>
+<rect x="7" y="7" width="114" height="754" fill="none" stroke="#e0d5b2" stroke-opacity="0.52" stroke-width="2"/>
+<g fill="#e0d5b2" text-anchor="middle" font-family="PingFang SC, Songti SC, sans-serif">
+  <text x="64" y="96.0" font-size="42" font-weight="650">山</text>
+<text x="64" y="166.0" font-size="42" font-weight="650">海</text>
+<text x="64" y="236.0" font-size="42" font-weight="650">经</text>
+</g>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="768" viewBox="0 0 128 768">
+<rect width="128" height="768" fill="#971c22"/>
+<rect x="7" y="7" width="114" height="754" fill="none" stroke="#fff5dc" stroke-opacity="0.52" stroke-width="2"/>
+<g transform="translate(64 384) rotate(-90)" fill="#fff5dc" text-anchor="middle" font-family="Avenir Next, Arial, sans-serif">
+  <text y="-9" font-size="40" font-weight="650" letter-spacing="0.4">TAO TE CHING</text>
+  <text y="28" font-size="15" letter-spacing="0.8">Lao Tzu</text>
+</g>
+</svg>

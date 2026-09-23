@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="768" viewBox="0 0 128 768">
+<rect width="128" height="768" fill="#f1efe3"/>
+<g fill="#702126" text-anchor="middle" font-family="PingFang SC, Songti SC, sans-serif">
+  <text x="64" y="96.0" font-size="42" font-weight="650">中</text>
+<text x="64" y="166.0" font-size="42" font-weight="650">国</text>
+<text x="64" y="236.0" font-size="42" font-weight="650">历</text>
+<text x="64" y="306.0" font-size="42" font-weight="650">代</text>
+<text x="64" y="376.0" font-size="42" font-weight="650">政</text>
+<text x="64" y="446.0" font-size="42" font-weight="650">治</text>
+<text x="64" y="516.0" font-size="42" font-weight="650">得</text>
+<text x="64" y="586.0" font-size="42" font-weight="650">失</text>
+</g>
+</svg>

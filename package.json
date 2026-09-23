@@ -1,0 +1,10 @@
+{
+  "name": "my-studio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 4174 --bind 127.0.0.1",
+    "check": "node tools/check-production.mjs"
+  }
+}
