@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CAMERA, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=13";
+import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=14";
 import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=12";
 import { applyPhotos } from "../assets/applyPhotos.js?v=11";
 import { CameraDirector } from "../camera/CameraDirector.js?v=15";
@@ -9,17 +9,21 @@ import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=19";
-import { LoadingScreen } from "../ui/LoadingScreen.js?v=5";
+import { IntroLoader } from "../intro/IntroLoader.js?v=6";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
+
+const INTRO_LINE_ART_URL = "./public/assets/intro/room-line-art-native-grouped-v14-sketch-v5.svg?rev=production-clean-wall-v5";
 
 export class RoomApp {
   constructor() {
     this.root = document.querySelector("#app");
     this.webglHost = document.querySelector("#webgl-layer");
     this.screenHost = document.querySelector("#screen-layer");
-    this.loading = new LoadingScreen();
+    this.loading = new IntroLoader(document.querySelector("#loader"), {
+      lineArtUrl: INTRO_LINE_ART_URL,
+    });
     this.cursor = new Cursor();
     this.clock = new THREE.Clock();
     this.pointerTime = performance.now();
@@ -90,34 +94,38 @@ export class RoomApp {
   }
 
   async start() {
+    const introRun = this.loading.start(INTRO_LINE_ART_URL);
+    introRun.catch((error) => this.loading.fail(error));
     try {
-      this.loading.setProgress(3, "Checking the room");
-      this.room = await loadRoom(MODEL_URL, (ratio) => this.loading.setProgress(5 + ratio * 67, "Arranging the room"));
+      this.loading.updateLoadProgress(3, "CHECKING ROOM");
+      this.room = await loadRoom(MODEL_URL, (ratio) => this.loading.updateLoadProgress(5 + ratio * 67, "ORGANIZING ROOM"));
       this.room.name = "MYROOM_V64_WEB";
       configureRoomMaterials(this.room, this.renderer);
       this.lightingSample = await applyStaticOcclusionSample(this.room, MODEL_URL);
       this.root.dataset.lightingSample = this.lightingSample.status;
       this.lights.setR7Polish(this.lightingSample.status === "applied");
       this.scene.add(this.room);
-      this.loading.setProgress(74, "Placing photos");
-      this.photoReport = await applyPhotos(this.room, PHOTO_BINDINGS, this.renderer, (ratio) => this.loading.setProgress(74 + ratio * 14, "正在摆放照片"));
+      this.loading.updateLoadProgress(74, "ORGANIZING DESK");
+      this.photoReport = await applyPhotos(this.room, PHOTO_BINDINGS, this.renderer, (ratio) => this.loading.updateLoadProgress(74 + ratio * 14, "PLACING PHOTOS"));
       this.root.dataset.photoCount = String(this.photoReport.applied.length);
       if (this.photoReport.missing.length) this.root.dataset.photoMissing = this.photoReport.missing.join("|");
       this.configureScene();
-      this.loading.setProgress(92, "Tuning the lights");
-      await this.warmFrames();
+      this.loading.updateLoadProgress(92, "PREPARING SCENE");
+      await this.warmFrames(({ progress, status }) => this.loading.updateLoadProgress(progress, status));
       // The room is predominantly static. Keep the generated shadow maps and
       // refresh them only when day/night or a practical light changes.
       this.renderer.shadowMap.autoUpdate = false;
-      await this.loading.finish();
+      this.loading.updateLoadProgress(100, "ROOM READY");
       // The room deliberately opens at night. The first ordinary page click
       // then reveals daytime once; the explicit mode toggle retains its own
       // repeatable behavior and is excluded below.
       this.firstOrdinaryClickPending = true;
       this.animate();
+      this.loading.markSceneReady({ warmup: "compileAsync+render" });
+      await this.loading.revealWhenReady();
     } catch (error) {
       console.error(error);
-      this.loading.status.textContent = `模型载入失败：${error.message}`;
+      this.loading.fail(error);
       this.root.dataset.error = "true";
     }
   }
@@ -349,7 +357,12 @@ export class RoomApp {
     this.panel.querySelector(".panel-close").addEventListener("click", closePanel);
     this.panel.querySelector(".panel-backdrop").addEventListener("pointerdown", closePanel);
     addEventListener("keydown", (event) => { if (event.key === "Escape" && !this.panel.hidden) this.interactions?.exitActive(); });
-    addEventListener("message", (event) => { if (event.data === "exit-galaxy") this.closeGalaxy(); });
+    addEventListener("message", (event) => {
+      if (event.data !== "exit-galaxy" || event.source !== this.galaxy?.contentWindow) return;
+      const galaxyOrigin = new URL(CONTENT.galaxy, window.location.href).origin;
+      if (event.origin !== galaxyOrigin) return;
+      this.closeGalaxy();
+    });
   }
 
   setMode(mode) {
@@ -690,7 +703,7 @@ export class RoomApp {
     const projected = frame?.center.clone().project(this.camera);
     const iframe = document.createElement("iframe");
     iframe.className = "galaxy-shell";
-    iframe.src = "./public/experiences/galaxy/index.html";
+    iframe.src = CONTENT.galaxy;
     iframe.title = "数字银河";
     iframe.style.setProperty("--portal-x", `${projected ? (projected.x + 1) * 50 : 50}%`);
     iframe.style.setProperty("--portal-y", `${projected ? (1 - projected.y) * 50 : 50}%`);
@@ -731,7 +744,9 @@ export class RoomApp {
     this.cameraDirector.goGlobal();
   }
 
-  async warmFrames() {
+  async warmFrames(onProgress = null) {
+    const report = (progress, status) => onProgress?.({ progress, status });
+    report(93, "PREPARING SCENE");
     // Compile the perspective-camera shader variants while the loading cover
     // is still present. Otherwise the first orthographic-to-perspective move
     // can pay that cost in the middle of the visible transition.
@@ -742,18 +757,24 @@ export class RoomApp {
     warmCamera.lookAt(this.controls.target);
     warmCamera.updateProjectionMatrix();
     if (this.renderer.compileAsync) {
+      report(94, "WARMING MATERIALS");
       await this.renderer.compileAsync(this.scene, warmCamera);
+      report(96, "REFINING RENDER STATE");
+    } else {
+      report(95, "REFINING RENDER STATE");
     }
     // `compileAsync` prepares shader programs but does not pay every first
     // perspective render cost. Draw behind the loading cover so the visible
     // orthographic-to-perspective handoff does not inherit those slow frames.
     for (let i = 0; i < 3; i += 1) {
       this.renderer.render(this.scene, warmCamera);
+      report(96 + (i + 1) * .8, "REFINING RENDER STATE");
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
     for (let i = 0; i < 3; i += 1) {
       this.renderer.render(this.scene, this.camera);
       this.screens.render();
+      report(98.4 + (i + 1) * .45, "FINAL CHECK");
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
   }

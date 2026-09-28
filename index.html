@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://bloom-blossom-garden.lovable.app" crossorigin />
   <link rel="dns-prefetch" href="//bloom-blossom-garden.lovable.app" />
   <link rel="stylesheet" href="./src/styles.css?v=27" />
+  <link rel="stylesheet" href="./src/intro/intro-loader.css?v=4" />
   <script type="importmap">
     {
       "imports": {
@@ -55,21 +56,31 @@
       <div class="panel-content"></div>
     </section>
 
-    <section id="loader" class="loader" aria-label="Arranging the room" aria-live="polite" aria-busy="true">
-      <div class="loader-copy">
-        <div class="liquid-title" id="liquid-title" role="heading" aria-level="1">
-          <span class="outline">DAOYI’s ROOM</span>
-        </div>
-        <div class="loader-progress" id="loader-progress" role="progressbar" aria-label="Room loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="loader-progress-fill"></i></div>
-        <div class="loader-meta">
-          <p id="loader-status">Arranging the room</p>
-          <p><span id="loader-percent">0</span>%</p>
-        </div>
+    <section id="loader" class="intro-loader" aria-label="Organizing room" aria-live="polite" aria-busy="true">
+      <div data-intro-line-art aria-hidden="true"></div>
+      <div data-intro-progress aria-live="polite">
+        <span data-intro-progress-label>ORGANIZING ROOM</span>
+        <span data-intro-percent>0%</span>
       </div>
+      <p data-intro-status hidden></p>
+      <p data-intro-error hidden></p>
+      <button type="button" data-intro-retry hidden>RETRY</button>
+      <aside data-intro-debug hidden aria-label="Intro loader debug">
+        <p><span>state</span><span data-intro-debug-value="state"></span></p>
+        <p><span>progress</span><span data-intro-debug-value="progress"></span></p>
+        <p><span>paths</span><span data-intro-debug-value="paths"></span></p>
+        <p><span>line</span><span data-intro-debug-value="line"></span></p>
+        <p><span>scene</span><span data-intro-debug-value="scene"></span></p>
+        <p><span>warmup</span><span data-intro-debug-value="warmup"></span></p>
+        <p><span>motion</span><span data-intro-debug-value="motion"></span></p>
+        <p><span>slow</span><span data-intro-debug-value="slow"></span></p>
+        <p><span>source</span><span data-intro-debug-value="source"></span></p>
+        <p><span>elapsed</span><span data-intro-debug-value="elapsed"></span></p>
+      </aside>
     </section>
 
     <div id="cursor" class="cursor" aria-hidden="true"></div>
   </div>
-  <script type="module" src="./src/main.js?v=61"></script>
+  <script type="module" src="./src/main.js?v=68"></script>
 </body>
 </html>

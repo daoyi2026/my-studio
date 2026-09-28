@@ -5,7 +5,7 @@ export const CONTENT = {
   imac: "https://rendaoyi.framer.ai/",
   macbook: "./public/content/kinetic-life-os/index.html",
   phone: "https://bloom-blossom-garden.lovable.app",
-  galaxy: "./public/experiences/galaxy/index.html",
+  galaxy: "https://daoyi2026.github.io/Moonrise/",
 };
 
 export const PHOTO_BINDINGS = [
