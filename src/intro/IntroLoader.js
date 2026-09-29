@@ -340,6 +340,7 @@ export class IntroLoader {
       state: this.state,
       progress: this.progress,
       loadProgress: this.progress,
+      displayProgress: this.lineProgress,
       lineProgress: this.lineProgress,
       sceneReady: this.sceneReady,
       lineArtReady: this.lineArtReady,
@@ -391,18 +392,28 @@ export class IntroLoader {
   }
 
   renderProgress(status = null) {
-    const roundedProgress = Math.round(this.progress);
-    const progressStage = status || this.getProgressStage(this.progress);
+    // The visible percentage, copy, and drawn frontier are one product state.
+    // The host's real progress remains the completion gate, while this shared
+    // visual value may move by the small bounded comfort allowance during a
+    // stall. This prevents a fast warm-up from showing 98% beside a 31% sketch.
+    const visibleProgress = this.lineArtReady ? 100 : this.lineProgress;
+    const roundedProgress = Math.round(visibleProgress);
+    const slowSuffix = this.slowMode && this.root.classList.contains("is-slow-message")
+      ? ` · ${this.options.slowStatus}`
+      : "";
+    const progressStage = visibleProgress >= 100
+      ? "ROOM READY"
+      : `${this.getProgressStage(visibleProgress)}${slowSuffix}`;
     if (roundedProgress !== this.lastRenderedProgress) {
       if (this.progressElement) this.progressElement.textContent = progressStage;
       if (this.percentElement) this.percentElement.textContent = `${roundedProgress}%`;
       this.lastRenderedProgress = roundedProgress;
-    } else if (status && this.progressElement) {
-      this.progressElement.textContent = status;
+    } else if (this.progressElement && this.progressElement.textContent !== progressStage) {
+      this.progressElement.textContent = progressStage;
     }
   }
 
-  /** Update the real host loading progress; the bottom percentage mirrors this value. */
+  /** Update real host progress; it gates completion and drives the shared visible progress. */
   updateLoadProgress(value, status = null) {
     this.setProgress(value, status);
   }
@@ -648,8 +659,25 @@ export class IntroLoader {
       record.dashLength = record.length * scale;
       record.path.style.strokeDasharray = `${record.dashLength}px ${record.dashLength * 2}px`;
       record.path.style.strokeDashoffset = `${dashOffsetForProgress(record, pathT)}px`;
+      record.renderedPathProgress = pathT;
     });
     this.lineArtHost.dataset.introVisible = this.lineProgress > 0 ? "true" : "false";
+  }
+
+  renderPathProgress(force = false) {
+    const timeline = clamp(this.lineProgress / 100);
+    this.lineArtHost.dataset.introVisible = this.lineProgress > 0 ? "true" : "false";
+    this.pathRecords.forEach((record) => {
+      const pathT = visiblePathProgress(clamp(
+        (timeline - record.timelineStart) / (record.timelineEnd - record.timelineStart),
+      ));
+      // Hundreds of completed SVG paths used to receive the same inline style
+      // on every animation frame. On mobile that competed directly with WebGL
+      // shader warm-up. Only the currently growing contour now mutates the DOM.
+      if (!force && Math.abs(pathT - (record.renderedPathProgress ?? -1)) < 0.0005) return;
+      record.path.style.strokeDashoffset = `${dashOffsetForProgress(record, pathT)}px`;
+      record.renderedPathProgress = pathT;
+    });
   }
 
   createFallbackSvg() {
@@ -826,11 +854,7 @@ export class IntroLoader {
             return;
           }
           this.lineProgress = this.getVisualTarget(this.progress);
-          this.lineArtHost.dataset.introVisible = this.lineProgress > 0 ? "true" : "false";
-          this.pathRecords.forEach((record) => {
-            const pathT = visiblePathProgress(clamp((this.lineProgress / 100 - record.timelineStart) / (record.timelineEnd - record.timelineStart)));
-            record.path.style.strokeDashoffset = `${dashOffsetForProgress(record, pathT)}px`;
-          });
+          this.renderPathProgress();
           this.renderProgress();
           this.renderDebug();
           if (this.progress >= 100) {
@@ -879,12 +903,7 @@ export class IntroLoader {
         // while the host is stalled, but it cannot finish before the real
         // progress reaches 100%. This keeps a slow load visibly alive without
         // inventing a fake percentage or skipping over intermediate strokes.
-        this.lineArtHost.dataset.introVisible = this.lineProgress > 0 ? "true" : "false";
-        const timeline = clamp(this.lineProgress / 100);
-        this.pathRecords.forEach((record) => {
-          const pathT = visiblePathProgress(clamp((timeline - record.timelineStart) / (record.timelineEnd - record.timelineStart)));
-          record.path.style.strokeDashoffset = `${dashOffsetForProgress(record, pathT)}px`;
-        });
+        this.renderPathProgress();
         this.renderProgress();
         this.renderDebug();
         if (actualProgress >= 100 && this.lineProgress >= 99.999) {

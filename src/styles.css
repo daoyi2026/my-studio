@@ -12,7 +12,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+html, body, #app { width: 100%; height: 100%; height: 100dvh; margin: 0; overflow: hidden; }
 body { background: #c8c5ba; color: var(--ink); }
 button, a { color: inherit; font: inherit; }
 button { border: 0; }
@@ -179,15 +179,25 @@ button { border: 0; }
 .cursor-trail { position: fixed; z-index: 199; left: 0; top: 0; width: calc(26px - var(--trail-index) * 4px); height: calc(26px - var(--trail-index) * 4px); margin: calc(-13px + var(--trail-index) * 2px) 0 0 calc(-13px + var(--trail-index) * 2px); border-radius: 50%; background: color-mix(in srgb, var(--cursor-copy) calc(14% - var(--trail-index) * 3%), transparent); box-shadow: 0 4px 14px rgba(38,40,36,.08); opacity: 0; pointer-events: none; transition: opacity .18s ease; }
 .cursor-trail.is-visible { opacity: calc(.68 - var(--trail-index) * .16); }
 
-.galaxy-shell { position: fixed; z-index: 150; inset: 0; border: 0; width: 100%; height: 100%; background: #02030a; opacity: 1; clip-path: circle(0% at var(--portal-x, 50%) var(--portal-y, 50%)); transition: clip-path 1.25s cubic-bezier(.7,0,.18,1); }
-.galaxy-shell.is-visible { clip-path: circle(150% at var(--portal-x, 50%) var(--portal-y, 50%)); }
+.galaxy-shell { position: fixed; z-index: 150; inset: 0; border: 0; width: 100vw; height: 100vh; height: 100dvh; background: transparent; opacity: 1; clip-path: circle(0% at var(--portal-x, 50%) var(--portal-y, 50%)); pointer-events: none; transition: clip-path 1.25s cubic-bezier(.7,0,.18,1); }
+.galaxy-shell.is-visible { clip-path: circle(150% at var(--portal-x, 50%) var(--portal-y, 50%)); pointer-events: auto; }
 
 @media (max-width: 760px) {
-  .topbar { inset: 14px; }
+  .topbar {
+    top: max(14px, env(safe-area-inset-top));
+    right: max(14px, env(safe-area-inset-right));
+    bottom: auto;
+    left: max(14px, env(safe-area-inset-left));
+    gap: 10px;
+  }
+  .brand { min-width: 0; gap: 9px; }
+  .brand strong { overflow: hidden; font-size: 11px; letter-spacing: .2em; text-overflow: ellipsis; white-space: nowrap; }
+  .brand-mark { flex: 0 0 auto; }
+  .topbar nav { flex: 0 0 auto; gap: 8px; }
   .brand em, .climate, .tech-mark, .room-tagline { display: none; }
-  .pill { padding: 0 13px; min-height: 32px; font-size: 12px; }
-  .light-controls { right: 14px; bottom: 14px; }
-  .hint { left: 14px; max-width: 48vw; line-height: 1.5; }
+  .pill { min-width: 60px; min-height: 32px; padding: 0 4px; font-size: 12px; }
+  .light-controls { right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
+  .hint { left: max(14px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); max-width: 46vw; line-height: 1.5; }
   .interaction-panel { max-height: 64vh; padding: 0; }
   .panel-content { max-height: 64vh; }
   .note-cloud { margin-inline: 2px; }
@@ -195,6 +205,14 @@ button { border: 0; }
   .book-cover-image { width: 104px; max-height: 166px; }
   .queue-row, .shelf-row { grid-template-columns: 26px minmax(0, 1fr) 22px; }
   .queue-row em, .shelf-row em { display: none; }
+}
+
+@media (pointer: coarse) {
+  #app { cursor: auto; }
+  .cursor, .cursor-trail { display: none !important; }
+  .pill, .icon-button, .light-controls button, .panel-close,
+  .music-controls button, .queue-row, .shelf-row, .note-paper,
+  .note-viewer-close, .note-form button { cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -8,6 +8,12 @@ const CONTRACTS = {
   phone: { prefix: "PHONE", material: /^iPhone Screen$/i, logicalWidth: 393, phone: true },
 };
 
+const PREVIEW_URLS = {
+  imac: "./public/assets/screens/imac-home.png",
+  macbook: "./public/assets/screens/macbook-home.png",
+  phone: "./public/assets/screens/phone-home.png",
+};
+
 function materialsFor(object) {
   return Array.isArray(object.material) ? object.material : [object.material];
 }
@@ -131,6 +137,10 @@ export class ScreenLayer extends EventTarget {
     this.cameraState = null;
     this.renderedFrames = 0;
     this.skippedFrames = 0;
+    this.sceneMoving = false;
+    this.mobileCompositing = matchMedia("(pointer: coarse)").matches || innerWidth <= 760;
+    this.contentStartTimers = [];
+    this.pendingInteractiveKind = null;
     container.addEventListener("pointerdown", (event) => {
       if (!this.activeKind || event.target.closest?.(".model-screen.is-interactive")) return;
       this.dispatchEvent(new CustomEvent("outsideclick", { detail: { kind: this.activeKind } }));
@@ -223,15 +233,8 @@ export class ScreenLayer extends EventTarget {
     iframe.title = options.phone ? "Bloom Blossom Garden" : kind;
     iframe.loading = "eager";
     iframe.allow = options.phone ? "fullscreen" : "fullscreen; autoplay";
-    const iframeStartedAt = performance.now();
-    iframe.addEventListener("load", () => {
-      const screen = this.screens[kind];
-      if (!screen) return;
-      screen.iframeLoadedAt = performance.now();
-      screen.loadDuration = screen.iframeLoadedAt - screen.iframeStartedAt;
-      element.dataset.ready = "true";
-    });
-    iframe.src = url;
+    iframe.dataset.src = url;
+    iframe.src = "about:blank";
     element.appendChild(iframe);
     const object = new CSS3DObject(element);
     orient(object, frame, -.00035);
@@ -244,33 +247,112 @@ export class ScreenLayer extends EventTarget {
       depthWrite: false,
       side: THREE.DoubleSide,
     });
+    new THREE.TextureLoader().load(PREVIEW_URLS[kind], (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = Math.min(4, this.webglScene.userData.maxAnisotropy || 4);
+      fallbackMaterial.map?.dispose();
+      fallbackMaterial.map = texture;
+      fallbackMaterial.needsUpdate = true;
+    });
     const fallback = plane(frame.width * 1.004, frame.height * 1.004, fallbackMaterial, frame, .0008, `WEB_SCREEN_TRANSITION_${kind.toUpperCase()}`);
-    fallback.visible = false;
+    // Keep a local, GPU-cheap image on the physical screen while its page is
+    // deferred. Loading three live websites during the 94% shader warm-up was
+    // the main first-visit contention point on mobile.
+    fallback.visible = true;
     fallback.renderOrder = 10;
     this.webglScene.add(fallback);
-    this.screens[kind] = { kind, mesh, localBox: null, frame, element, object, iframe, fallback, url, logicalWidth, logicalHeight, iframeStartedAt, iframeLoadedAt: null, loadDuration: null };
+    this.screens[kind] = {
+      kind, mesh, localBox: null, frame, element, object, iframe, fallback, url,
+      logicalWidth, logicalHeight, iframeStartedAt: null, iframeLoadedAt: null,
+      loadDuration: null, contentStarted: false, contentReady: false,
+    };
+    element.style.visibility = "hidden";
+    iframe.addEventListener("load", () => {
+      const screen = this.screens[kind];
+      if (!screen?.contentStarted || iframe.src === "about:blank") return;
+      screen.iframeLoadedAt = performance.now();
+      screen.loadDuration = screen.iframeLoadedAt - screen.iframeStartedAt;
+      screen.contentReady = true;
+      element.dataset.ready = "true";
+      this.applyScreenVisibility();
+      if (this.pendingInteractiveKind === kind) this.setInteractive(kind);
+    });
     this.cameraState = null;
   }
 
-  setTransitioning(kind) {
-    const next = kind && this.screens[kind] ? kind : null;
-    if (next === this.transitionKind) return;
-    this.transitionKind = next;
+  startContent(kind) {
+    const screen = this.screens[kind];
+    if (!screen || screen.contentStarted) return;
+    screen.contentStarted = true;
+    screen.iframeStartedAt = performance.now();
+    screen.iframe.src = screen.url;
+  }
+
+  startContentLoading() {
+    // Mobile keeps the lightweight local previews until a screen is actually
+    // selected. Two full external sites running behind the room were enough
+    // to halve camera-transition frame rate on phones.
+    if (this.mobileCompositing) return;
+    this.contentStartTimers.forEach(clearTimeout);
+    this.contentStartTimers = [];
+    const order = ["macbook", "imac", "phone"].filter((kind) => this.screens[kind]);
+    const start = (index) => {
+      if (index >= order.length) return;
+      const run = () => {
+        this.startContent(order[index]);
+        this.contentStartTimers.push(setTimeout(() => start(index + 1), 850));
+      };
+      if (typeof requestIdleCallback === "function") requestIdleCallback(run, { timeout: 1200 });
+      else this.contentStartTimers.push(setTimeout(run, 250));
+    };
+    start(0);
+  }
+
+  applyScreenVisibility() {
     Object.values(this.screens).forEach((screen) => {
-      // Desktop screens remain as their live CSS3D surfaces during camera
-      // moves. Swapping the iMac to a WebGL placeholder caused a visible flash
-      // and made the two displays disagree during the same transition.
-      const useFallback = screen.kind === next && screen.kind === "phone";
+      const mobileInteractive = this.mobileCompositing
+        && !this.sceneMoving
+        && this.overlayKind === screen.kind;
+      // The preview texture is a current, pixel-matched capture of the live
+      // page. Use it while any camera is moving so neither desktop nor mobile
+      // needs to recomposite transformed iframe trees on every frame.
+      const motionFallback = this.sceneMoving;
+      const focusedPhoneFallback = screen.kind === this.transitionKind && screen.kind === "phone";
+      const useFallback = this.mobileCompositing
+        ? !mobileInteractive
+        : !screen.contentReady || motionFallback || focusedPhoneFallback;
       screen.fallback.visible = useFallback;
-      if (!this.overlayKind) screen.element.style.visibility = useFallback ? "hidden" : "visible";
+      screen.element.style.contentVisibility = useFallback ? "hidden" : "visible";
+      // `visibility:hidden` keeps animated cross-origin pages scheduled in
+      // Chromium. `display:none` preserves their browsing context and state,
+      // but lets the browser suspend painting while the matching preview is
+      // carrying the screen during the camera move.
+      screen.iframe.style.display = useFallback ? "none" : "block";
+      if (!this.overlayKind || this.mobileCompositing) {
+        screen.element.style.visibility = useFallback ? "hidden" : "visible";
+      }
     });
     this.cameraState = null;
+  }
+
+  setTransitioning(kind, sceneMoving = false) {
+    const next = kind && this.screens[kind] ? kind : null;
+    if (next === this.transitionKind && sceneMoving === this.sceneMoving) return;
+    this.transitionKind = next;
+    this.sceneMoving = sceneMoving;
+    this.applyScreenVisibility();
     if (!next) this.render(true);
   }
 
   setInteractive(kind) {
     const next = kind && this.screens[kind] ? kind : null;
-    if (next === this.activeKind) return;
+    this.pendingInteractiveKind = next;
+    if (next && !this.screens[next].contentReady) {
+      this.startContent(next);
+      this.applyScreenVisibility();
+      return;
+    }
+    if (next === this.activeKind && (!next || this.overlayKind === next)) return;
     this.activeKind = next;
     if (this.overlayKind && this.overlayKind !== next) this.unmountInteractiveOverlay();
     // CSS3DRenderer uses a viewport root plus view/camera wrapper elements.
@@ -293,6 +375,7 @@ export class ScreenLayer extends EventTarget {
       else delete app.dataset.screenActive;
     }
     Object.values(this.screens).forEach((screen) => screen.element.classList.toggle("is-interactive", screen.kind === next));
+    this.applyScreenVisibility();
   }
 
   mountInteractiveOverlay(kind) {
@@ -341,6 +424,7 @@ export class ScreenLayer extends EventTarget {
       pointerEvents: "auto",
     });
     this.overlayKind = kind;
+    this.applyScreenVisibility();
   }
 
   unmountInteractiveOverlay() {
@@ -355,6 +439,7 @@ export class ScreenLayer extends EventTarget {
     this.overlayViewTransform = null;
     this.overlayCameraTransform = null;
     this.overlayScreenStyles = null;
+    this.applyScreenVisibility();
     this.render(true);
   }
 
@@ -370,6 +455,12 @@ export class ScreenLayer extends EventTarget {
 
   render(force = false) {
     if (this.overlayKind) return false;
+    // The matching local screen previews are already visible during motion,
+    // so the CSS3D scene can wait for the camera to settle and render once.
+    if (this.sceneMoving && !force) {
+      this.skippedFrames += 1;
+      return false;
+    }
     this.camera.updateMatrixWorld();
     const nextState = [...this.camera.projectionMatrix.elements, ...this.camera.matrixWorld.elements];
     const unchanged = this.cameraState?.length === nextState.length

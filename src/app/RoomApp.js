@@ -4,17 +4,25 @@ import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../
 import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=12";
 import { applyPhotos } from "../assets/applyPhotos.js?v=11";
 import { CameraDirector } from "../camera/CameraDirector.js?v=15";
-import { ScreenLayer } from "../rendering/ScreenLayer.js?v=12";
+import { ScreenLayer } from "../rendering/ScreenLayer.js?v=15";
 import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=19";
-import { IntroLoader } from "../intro/IntroLoader.js?v=6";
+import { IntroLoader } from "../intro/IntroLoader.js?v=9";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
 
 const INTRO_LINE_ART_URL = "./public/assets/intro/room-line-art-native-grouped-v14-sketch-v5.svg?rev=production-clean-wall-v5";
+
+function viewportSize() {
+  const viewport = window.visualViewport;
+  return {
+    width: Math.max(1, Math.round(viewport?.width || document.documentElement.clientWidth || innerWidth)),
+    height: Math.max(1, Math.round(viewport?.height || document.documentElement.clientHeight || innerHeight)),
+  };
+}
 
 export class RoomApp {
   constructor() {
@@ -37,16 +45,29 @@ export class RoomApp {
     this.musicDuration = 0;
     this.musicAudio = null;
     this.bookIndex = 0;
+    this.galaxy = null;
+    this.galaxyReady = false;
+    this.galaxyIsOpen = false;
+    this.galaxyRevealAllowed = false;
+    this.galaxyPendingPlay = false;
+    this.galaxyTransitionAllowed = false;
+    this.galaxyPendingTransition = null;
+    this.galaxyTimers = [];
+    this.galaxyPrepareTimer = null;
+    const viewport = viewportSize();
+    // Preserve the accepted render resolution on every device. Performance
+    // work below removes startup/compositor contention instead of lowering
+    // the room's visual quality on touch screens.
     this.idlePixelRatio = Math.min(devicePixelRatio, 1.25);
 
     this.scene = new THREE.Scene();
-    this.perspectiveCamera = new THREE.PerspectiveCamera(13.5, innerWidth / innerHeight, .02, 100);
+    this.perspectiveCamera = new THREE.PerspectiveCamera(13.5, viewport.width / viewport.height, .02, 100);
     this.orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, .02, 100);
     this.camera = this.perspectiveCamera;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.setPixelRatio(this.idlePixelRatio);
-    this.renderer.setSize(innerWidth, innerHeight);
+    this.renderer.setSize(viewport.width, viewport.height);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -75,6 +96,7 @@ export class RoomApp {
     this.lights = new LightDirector(this.scene, this.renderer);
 
     addEventListener("resize", () => this.resize());
+    window.visualViewport?.addEventListener("resize", () => this.resize(), { passive: true });
     addEventListener("pointermove", () => this.cameraDirector.noteInput(), { passive: true });
     this.renderer.domElement.addEventListener("wheel", (event) => {
       const transitioning = this.cameraDirector.enterPerspectiveFromGlobal(event.deltaY);
@@ -110,19 +132,45 @@ export class RoomApp {
       this.root.dataset.photoCount = String(this.photoReport.applied.length);
       if (this.photoReport.missing.length) this.root.dataset.photoMissing = this.photoReport.missing.join("|");
       this.configureScene();
-      this.loading.updateLoadProgress(92, "PREPARING SCENE");
-      await this.warmFrames(({ progress, status }) => this.loading.updateLoadProgress(progress, status));
-      // The room is predominantly static. Keep the generated shadow maps and
-      // refresh them only when day/night or a practical light changes.
+      // Compile the accepted lighting materials without generating every
+      // shadow map in the same visible 94% frame. The one-time shadow render
+      // is requested as the compositor begins fading the loader, so the final
+      // room still opens with the full approved light treatment.
       this.renderer.shadowMap.autoUpdate = false;
+      this.renderer.shadowMap.needsUpdate = false;
+      this.loading.updateLoadProgress(92, "PREPARING SCENE");
+      const warmupStatus = await this.warmFrames(({ progress, status }) => this.loading.updateLoadProgress(progress, status));
       this.loading.updateLoadProgress(100, "ROOM READY");
       // The room deliberately opens at night. The first ordinary page click
       // then reveals daytime once; the explicit mode toggle retains its own
       // repeatable behavior and is excluded below.
       this.firstOrdinaryClickPending = true;
+      // The warm-up gate is already complete. Open it before the first live
+      // render so an expensive mobile frame cannot leave the cover saying
+      // 100% while the state machine still believes the scene is unready.
+      this.loading.markSceneReady({ warmup: warmupStatus });
       this.animate();
-      this.loading.markSceneReady({ warmup: "compileAsync+render" });
+      const stopWatchingReveal = this.loading.onStateChange(({ state }) => {
+        if (state !== IntroLoader.STATES.TRANSITION) return;
+        stopWatchingReveal();
+        // Use the long accepted crossfade as a quiet preload window. The
+        // embedded sketch pauses as soon as its runtime and canvas are ready,
+        // so this adds no continuous hidden work and does not alter readiness.
+        this.scheduleGalaxyPreload(this.loading.reducedMotion ? 0 : 2800);
+        // Let the opacity transition enter the compositor before paying the
+        // first shadow-map cost on the following frame. Restore the renderer's
+        // normal continuous shadow updates immediately afterwards so moving
+        // objects and every accepted day/night or lamp effect remain intact.
+        requestAnimationFrame(() => {
+          this.renderer.shadowMap.needsUpdate = true;
+          this.renderer.shadowMap.autoUpdate = true;
+        });
+      });
       await this.loading.revealWhenReady();
+      // Live websites are not part of room readiness. Start them only after
+      // the cover has left, staggered during idle time, so they cannot contend
+      // with model decoding, shader warm-up, or the intro line animation.
+      this.screens.startContentLoading();
     } catch (error) {
       console.error(error);
       this.loading.fail(error);
@@ -358,10 +406,18 @@ export class RoomApp {
     this.panel.querySelector(".panel-backdrop").addEventListener("pointerdown", closePanel);
     addEventListener("keydown", (event) => { if (event.key === "Escape" && !this.panel.hidden) this.interactions?.exitActive(); });
     addEventListener("message", (event) => {
-      if (event.data !== "exit-galaxy" || event.source !== this.galaxy?.contentWindow) return;
+      if (event.source !== this.galaxy?.contentWindow) return;
       const galaxyOrigin = new URL(CONTENT.galaxy, window.location.href).origin;
       if (event.origin !== galaxyOrigin) return;
-      this.closeGalaxy();
+      if (event.data === "galaxy-ready") {
+        this.galaxyReady = true;
+        this.galaxy.dataset.ready = "true";
+        if (this.galaxyPendingPlay) this.requestGalaxyPlayback();
+        this.continueGalaxyTransition();
+        this.revealGalaxyWhenReady();
+      } else if (event.data === "exit-galaxy") {
+        this.closeGalaxy();
+      }
     });
   }
 
@@ -695,57 +751,141 @@ export class RoomApp {
     render();
   }
 
-  openGalaxy(rule, object) {
-    if (this.galaxy) return;
-    let mesh = object?.isMesh ? object : null;
-    object?.traverse?.((candidate) => { if (!mesh && candidate.isMesh) mesh = candidate; });
-    const frame = mesh ? surfaceFrame(mesh, null, this.camera.position) : null;
-    const projected = frame?.center.clone().project(this.camera);
+  scheduleGalaxyPreload(delayMs = 0) {
+    if (this.galaxy || this.galaxyPrepareTimer) return;
+    const prepare = () => {
+      this.galaxyPrepareTimer = null;
+      this.prepareGalaxy();
+    };
+    const queueWhenIdle = () => {
+      if ("requestIdleCallback" in window) requestIdleCallback(prepare, { timeout: 1200 });
+      else prepare();
+    };
+    this.galaxyPrepareTimer = setTimeout(queueWhenIdle, delayMs);
+  }
+
+  prepareGalaxy() {
+    if (this.galaxy) return this.galaxy;
     const iframe = document.createElement("iframe");
     iframe.className = "galaxy-shell";
     iframe.src = CONTENT.galaxy;
     iframe.title = "数字银河";
-    iframe.style.setProperty("--portal-x", `${projected ? (projected.x + 1) * 50 : 50}%`);
-    iframe.style.setProperty("--portal-y", `${projected ? (1 - projected.y) * 50 : 50}%`);
+    iframe.allow = "autoplay; fullscreen";
+    iframe.tabIndex = -1;
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.setAttribute("allowfullscreen", "");
     document.body.appendChild(iframe);
     this.galaxy = iframe;
+    return iframe;
+  }
+
+  requestGalaxyPlayback() {
+    const iframe = this.galaxy;
+    if (!iframe) return false;
+    this.galaxyPendingPlay = true;
+    try {
+      const startAudio = iframe.contentWindow?.__moonriseStartAudio;
+      if (typeof startAudio === "function") {
+        const started = startAudio();
+        Promise.resolve(started).then((didStart) => {
+          if (didStart) this.galaxyPendingPlay = false;
+        });
+        return true;
+      }
+    } catch (_) {
+      // Cross-origin local previews use the same validated message protocol.
+    }
+    const galaxyOrigin = new URL(CONTENT.galaxy, window.location.href).origin;
+    iframe.contentWindow?.postMessage("galaxy-play", galaxyOrigin);
+    return false;
+  }
+
+  revealGalaxyWhenReady() {
+    if (!this.galaxy || !this.galaxyIsOpen || !this.galaxyReady || !this.galaxyRevealAllowed) return;
+    this.galaxy.removeAttribute("aria-hidden");
+    this.galaxy.classList.add("is-visible");
+  }
+
+  continueGalaxyTransition() {
+    if (!this.galaxyIsOpen || !this.galaxyReady || !this.galaxyTransitionAllowed || !this.galaxyPendingTransition) return;
+    const continueTransition = this.galaxyPendingTransition;
+    this.galaxyPendingTransition = null;
+    continueTransition();
+  }
+
+  openGalaxy(rule, object) {
+    if (this.galaxyIsOpen) return;
+    const iframe = this.prepareGalaxy();
+    this.galaxyIsOpen = true;
+    this.galaxyRevealAllowed = false;
+    this.galaxyTransitionAllowed = false;
+    this.galaxyPendingTransition = null;
+    let mesh = object?.isMesh ? object : null;
+    object?.traverse?.((candidate) => { if (!mesh && candidate.isMesh) mesh = candidate; });
+    const frame = mesh ? surfaceFrame(mesh, null, this.camera.position) : null;
+    const projected = frame?.center.clone().project(this.camera);
+    iframe.style.setProperty("--portal-x", `${projected ? (projected.x + 1) * 50 : 50}%`);
+    iframe.style.setProperty("--portal-y", `${projected ? (1 - projected.y) * 50 : 50}%`);
+    this.requestGalaxyPlayback();
 
     if (rule.id === "window" && frame) {
       this.cameraDirector.goSurface(mesh, mesh.geometry?.boundingBox || null, rule.label, frame);
-      this.galaxyTimers = [
-        setTimeout(() => {
-          const depth = Math.max(frame.width, frame.height) * 1.25;
-          const through = {
-            position: frame.center.clone().addScaledVector(frame.normal, -depth * .45),
-            target: frame.center.clone().addScaledVector(frame.normal, -depth * 1.7),
-            up: frame.up,
-            fov: 46,
-            near: this.cameraDirector.focusNear,
-            label: rule.label,
-          };
-          this.cameraDirector.transition(through, { level: "interaction", region: "drawing", duration: 1250 });
-        }, 1050),
-        setTimeout(() => iframe.classList.add("is-visible"), 1370),
-      ];
+      this.galaxyPendingTransition = () => {
+        const depth = Math.max(frame.width, frame.height) * 1.25;
+        const through = {
+          position: frame.center.clone().addScaledVector(frame.normal, -depth * .45),
+          target: frame.center.clone().addScaledVector(frame.normal, -depth * 1.7),
+          up: frame.up,
+          fov: 46,
+          near: this.cameraDirector.focusNear,
+          label: rule.label,
+        };
+        this.cameraDirector.transition(through, { level: "interaction", region: "drawing", duration: 1250 });
+        this.galaxyTimers.push(setTimeout(() => {
+          this.galaxyRevealAllowed = true;
+          this.revealGalaxyWhenReady();
+        }, 320));
+      };
+      this.galaxyTimers = [setTimeout(() => {
+        this.galaxyTransitionAllowed = true;
+        this.continueGalaxyTransition();
+      }, 1050)];
     } else {
       this.cameraDirector.goObject(object, rule.label, { fill: .9, duration: 1500 });
-      this.galaxyTimers = [setTimeout(() => iframe.classList.add("is-visible"), 1150)];
+      this.galaxyPendingTransition = () => {
+        this.galaxyRevealAllowed = true;
+        this.revealGalaxyWhenReady();
+      };
+      this.galaxyTimers = [setTimeout(() => {
+        this.galaxyTransitionAllowed = true;
+        this.continueGalaxyTransition();
+      }, 1150)];
     }
   }
 
   closeGalaxy() {
-    if (!this.galaxy) return;
+    if (!this.galaxy || !this.galaxyIsOpen) return;
     this.galaxyTimers?.forEach(clearTimeout);
     this.galaxyTimers = [];
-    const iframe = this.galaxy;
-    iframe.classList.remove("is-visible");
-    setTimeout(() => iframe.remove(), 900);
-    this.galaxy = null;
+    this.galaxyIsOpen = false;
+    this.galaxyRevealAllowed = false;
+    this.galaxyPendingPlay = false;
+    this.galaxyTransitionAllowed = false;
+    this.galaxyPendingTransition = null;
+    this.galaxy.classList.remove("is-visible");
+    this.galaxy.setAttribute("aria-hidden", "true");
+    try {
+      this.galaxy.contentWindow?.__moonrisePauseAudio?.();
+    } catch (_) {
+      const galaxyOrigin = new URL(CONTENT.galaxy, window.location.href).origin;
+      this.galaxy.contentWindow?.postMessage("galaxy-pause", galaxyOrigin);
+    }
     this.cameraDirector.goGlobal();
   }
 
   async warmFrames(onProgress = null) {
     const report = (progress, status) => onProgress?.({ progress, status });
+    const constrainedDevice = matchMedia("(pointer: coarse)").matches || viewportSize().width <= 760;
     report(93, "PREPARING SCENE");
     // Compile the perspective-camera shader variants while the loading cover
     // is still present. Otherwise the first orthographic-to-perspective move
@@ -756,11 +896,68 @@ export class RoomApp {
     warmCamera.fov = CAMERA.localFov;
     warmCamera.lookAt(this.controls.target);
     warmCamera.updateProjectionMatrix();
+
+    if (constrainedDevice) {
+      // A full-scene compile asks mobile Safari/Chrome to prepare hundreds of
+      // materials in one JavaScript task. Split the same work into bounded
+      // batches so the SVG pen and progress label receive frames in between.
+      const visibleMeshes = [];
+      this.scene.traverse((object) => {
+        if (object.isMesh && object.visible) visibleMeshes.push(object);
+      });
+      const batchSize = Math.max(10, Math.ceil(visibleMeshes.length / 48));
+      visibleMeshes.forEach((mesh) => { mesh.visible = false; });
+      try {
+        for (let offset = 0; offset < visibleMeshes.length; offset += batchSize) {
+          const batch = visibleMeshes.slice(offset, offset + batchSize);
+          batch.forEach((mesh) => { mesh.visible = true; });
+          // Render the batch directly. `compileAsync()` still deferred vertex
+          // buffer upload and parts of the Metal pipeline until the first
+          // full draw, recreating a long 99% pause. A real bounded draw pays
+          // the exact same accepted material cost in small, yieldable pieces.
+          this.renderer.render(this.scene, warmCamera);
+          batch.forEach((mesh) => { mesh.visible = false; });
+          const ratio = Math.min(1, (offset + batch.length) / visibleMeshes.length);
+          report(93 + ratio * 5, "REFINING RENDER STATE");
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+      } finally {
+        visibleMeshes.forEach((mesh) => { mesh.visible = true; });
+      }
+      // Confirm the fully restored scene uses only the programs prepared by
+      // the batches, then warm the accepted orthographic opening camera once.
+      this.renderer.render(this.scene, warmCamera);
+      report(98.5, "FINAL CHECK");
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      this.renderer.render(this.scene, this.camera);
+      this.screens.render();
+      report(99.4, "FINAL CHECK");
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      return "batched-render";
+    }
+
+    let warmupStatus = "render-only";
     if (this.renderer.compileAsync) {
       report(94, "WARMING MATERIALS");
-      await this.renderer.compileAsync(this.scene, warmCamera);
+      let pulse = 94;
+      const pulseTimer = setInterval(() => {
+        pulse = Math.min(95.5, pulse + .22);
+        report(pulse, "WARMING MATERIALS");
+      }, 420);
+      const compileResult = await Promise.race([
+        this.renderer.compileAsync(this.scene, warmCamera)
+          .then(() => "compiled")
+          .catch((error) => {
+            console.warn("[room] Async shader warm-up failed; continuing with render warm-up", error);
+            return "failed";
+          }),
+        new Promise((resolve) => setTimeout(() => resolve("timeout"), 6000)),
+      ]);
+      clearInterval(pulseTimer);
+      warmupStatus = compileResult === "compiled" ? "compileAsync+render" : "render-only";
       report(96, "REFINING RENDER STATE");
     } else {
+      warmupStatus = "render-only";
       report(95, "REFINING RENDER STATE");
     }
     // `compileAsync` prepares shader programs but does not pay every first
@@ -777,6 +974,7 @@ export class RoomApp {
       report(98.4 + (i + 1) * .45, "FINAL CHECK");
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
+    return warmupStatus;
   }
 
   updateMotion(elapsed) {
@@ -801,9 +999,10 @@ export class RoomApp {
   }
 
   resize() {
-    this.cameraDirector.setAspect(innerWidth / innerHeight);
-    this.renderer.setSize(innerWidth, innerHeight);
-    this.screens.resize(innerWidth, innerHeight);
+    const viewport = viewportSize();
+    this.cameraDirector.setAspect(viewport.width / viewport.height);
+    this.renderer.setSize(viewport.width, viewport.height);
+    this.screens.resize(viewport.width, viewport.height);
   }
 
   animate() {
@@ -825,7 +1024,7 @@ export class RoomApp {
     // empty screen shell. Wait until both transition types are complete.
     const screenFocusSettled = !cameraMoving;
     const focusedScreen = this.cameraDirector.level === "interaction" ? this.interactions?.activeRule?.screen : null;
-    this.screens.setTransitioning(focusedScreen && !screenFocusSettled ? focusedScreen : null);
+    this.screens.setTransitioning(focusedScreen && !screenFocusSettled ? focusedScreen : null, cameraMoving);
     const activeScreen = screenFocusSettled ? focusedScreen : null;
     this.screens.setInteractive(activeScreen || null);
     this.renderer.render(this.scene, this.camera);
