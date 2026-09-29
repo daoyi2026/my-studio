@@ -298,6 +298,7 @@ export class IntroLoader {
     this.slowTimer = 0;
     this.slowMessageTimer = 0;
     this.completionTimer = 0;
+    this.animationCompletionFallbackTimer = 0;
     this.animationFrame = 0;
     this.lastAnimationTime = 0;
     this.resolveAnimation = null;
@@ -387,6 +388,7 @@ export class IntroLoader {
     this.progressSampleAt = now;
     if (nextProgress > this.progress) this.progressLastAdvancedAt = now;
     this.progress = nextProgress;
+    if (this.progress >= 100) this.schedulePathAnimationCompletionFallback(this.runToken);
     this.renderProgress(status);
     this.renderDebug();
   }
@@ -490,10 +492,12 @@ export class IntroLoader {
     clearTimeout(this.slowTimer);
     clearTimeout(this.slowMessageTimer);
     clearTimeout(this.completionTimer);
+    clearTimeout(this.animationCompletionFallbackTimer);
     this.animationFrame = 0;
     this.slowTimer = 0;
     this.slowMessageTimer = 0;
     this.completionTimer = 0;
+    this.animationCompletionFallbackTimer = 0;
     this.lastAnimationTime = 0;
     this.resolveAnimation = null;
     this.state = STATES.BOOT;
@@ -570,6 +574,37 @@ export class IntroLoader {
     this.renderDebug();
     this.maybeComplete();
     return this.getSnapshot();
+  }
+
+  completePathAnimation(token) {
+    if (token !== this.runToken || this.lineArtReady || !this.resolveAnimation) return false;
+    clearTimeout(this.animationCompletionFallbackTimer);
+    this.animationCompletionFallbackTimer = 0;
+    cancelAnimationFrame(this.animationFrame);
+    this.pathRecords.forEach(({ path }) => { path.style.strokeDashoffset = "0px"; });
+    this.lineProgress = 100;
+    this.animationFrame = 0;
+    this.resolveAnimation?.();
+    this.resolveAnimation = null;
+    return true;
+  }
+
+  schedulePathAnimationCompletionFallback(token) {
+    if (
+      this.reducedMotion
+      || this.animationCompletionFallbackTimer
+      || this.progress < 100
+      || this.lineArtReady
+      || !this.resolveAnimation
+    ) return;
+    const drawSpeed = Math.max(this.getLineDrawSpeed(), this.options.lineDrawMaxSpeedPercentPerSecond);
+    const remainingMs = Math.ceil(Math.max(0, 100 - this.lineProgress) / drawSpeed * 1000);
+    // Only recover when real progress reached 100% but the final rAF was lost.
+    this.animationCompletionFallbackTimer = setTimeout(() => {
+      this.animationCompletionFallbackTimer = 0;
+      if (token !== this.runToken || this.progress < 100) return;
+      this.completePathAnimation(token);
+    }, remainingMs + 400);
   }
 
   beginSlowTimers() {
@@ -874,6 +909,7 @@ export class IntroLoader {
     this.lastAnimationTime = performance.now();
     return new Promise((resolve) => {
       this.resolveAnimation = resolve;
+      this.schedulePathAnimationCompletionFallback(token);
       const tick = (now) => {
         if (token !== this.runToken) {
           this.resolveAnimation = null;
@@ -907,11 +943,7 @@ export class IntroLoader {
         this.renderProgress();
         this.renderDebug();
         if (actualProgress >= 100 && this.lineProgress >= 99.999) {
-          this.pathRecords.forEach(({ path }) => { path.style.strokeDashoffset = "0px"; });
-          this.lineProgress = 100;
-          this.animationFrame = 0;
-          this.resolveAnimation = null;
-          resolve();
+          this.completePathAnimation(token);
           return;
         }
         this.animationFrame = requestAnimationFrame(tick);
@@ -986,6 +1018,8 @@ export class IntroLoader {
     clearTimeout(this.slowTimer);
     clearTimeout(this.slowMessageTimer);
     clearTimeout(this.completionTimer);
+    clearTimeout(this.animationCompletionFallbackTimer);
+    this.animationCompletionFallbackTimer = 0;
     cancelAnimationFrame(this.animationFrame);
     this.animationFrame = 0;
     this.runToken += 1;
