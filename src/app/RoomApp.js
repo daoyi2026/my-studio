@@ -452,7 +452,8 @@ export class RoomApp {
     this.root.dataset.level = level;
     this.screens.setInteractive(null);
     this.showPanel(null);
-    document.querySelector("#hint").textContent = level === "global" ? "Click a room area to explore · Scroll to dolly · Drag to orbit" : level === "local" ? "Click an object to focus · Scroll and drag stay in this view" : "Use the object · Click nearby to return";
+    const hint = document.querySelector("#hint");
+    if (hint) hint.textContent = level === "global" ? "Click a room area to explore · Scroll to dolly · Drag to orbit" : level === "local" ? "Click an object to focus · Scroll and drag stay in this view" : "Use the object · Click nearby to return";
   }
 
   showPanel(kind, rule) {
