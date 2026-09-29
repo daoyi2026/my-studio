@@ -970,6 +970,9 @@ export class IntroLoader {
     this.sceneReady = true;
     this.warmupStatus = warmup;
     this.setState(this.lineArtReady ? STATES.COMPLETING : STATES.WAITING, "host-ready");
+    // The host may have reached 100 while the line art was already complete;
+    // refresh the shared copy now that the second gate is actually open.
+    this.renderProgress();
     this.maybeComplete();
   }
 
