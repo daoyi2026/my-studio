@@ -9,12 +9,13 @@ import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=19";
-import { IntroLoader } from "../intro/IntroLoader.js?v=14";
+import { IntroLoader } from "../intro/IntroLoader.js?v=15";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
 
 const INTRO_LINE_ART_URL = "./public/assets/intro/room-line-art-native-grouped-v14-sketch-v5.svg?rev=production-clean-wall-v5";
+const STARTUP_WARMUP_BUDGET_MS = 2600;
 
 function viewportSize() {
   const viewport = window.visualViewport;
@@ -37,6 +38,7 @@ export class RoomApp {
     this.pointerTime = performance.now();
     this.mode = "night";
     this.firstOrdinaryClickPending = false;
+    this.warmupCancelled = false;
     this.panel = document.querySelector("#interaction-panel");
     this.panelContent = this.panel.querySelector(".panel-content");
     this.musicIndex = 0;
@@ -139,7 +141,21 @@ export class RoomApp {
       this.renderer.shadowMap.autoUpdate = false;
       this.renderer.shadowMap.needsUpdate = false;
       this.loading.updateLoadProgress(92, "PREPARING SCENE");
-      const warmupStatus = await this.warmFrames(({ progress, status }) => this.loading.updateLoadProgress(progress, status));
+      this.warmupCancelled = false;
+      const warmupPromise = this.warmFrames(({ progress, status }) => this.loading.updateLoadProgress(progress, status));
+      let warmupTimer = 0;
+      const warmupBudget = new Promise((resolve) => {
+        warmupTimer = window.setTimeout(() => {
+          this.warmupCancelled = true;
+          resolve("deferred-render");
+        }, STARTUP_WARMUP_BUDGET_MS);
+      });
+      let warmupStatus;
+      try {
+        warmupStatus = await Promise.race([warmupPromise, warmupBudget]);
+      } finally {
+        window.clearTimeout(warmupTimer);
+      }
       this.loading.updateLoadProgress(100, "ROOM READY");
       // The room deliberately opens at night. The first ordinary page click
       // then reveals daytime once; the explicit mode toggle retains its own
@@ -904,10 +920,11 @@ export class RoomApp {
       this.scene.traverse((object) => {
         if (object.isMesh && object.visible) visibleMeshes.push(object);
       });
-      const batchSize = Math.max(10, Math.ceil(visibleMeshes.length / 48));
+      const batchSize = Math.max(4, Math.ceil(visibleMeshes.length / 96));
       visibleMeshes.forEach((mesh) => { mesh.visible = false; });
       try {
         for (let offset = 0; offset < visibleMeshes.length; offset += batchSize) {
+          if (this.warmupCancelled) return "deferred-render";
           const batch = visibleMeshes.slice(offset, offset + batchSize);
           batch.forEach((mesh) => { mesh.visible = true; });
           // Render the batch directly. `compileAsync()` still deferred vertex
@@ -919,10 +936,12 @@ export class RoomApp {
           const ratio = Math.min(1, (offset + batch.length) / visibleMeshes.length);
           report(93 + ratio * 5, "REFINING RENDER STATE");
           await new Promise((resolve) => requestAnimationFrame(resolve));
+          if (this.warmupCancelled) return "deferred-render";
         }
       } finally {
         visibleMeshes.forEach((mesh) => { mesh.visible = true; });
       }
+      if (this.warmupCancelled) return "deferred-render";
       // Do not pay a second full-scene draw behind the last 0.6% of the
       // loader. The first live animation frame uses the same opening camera
       // during the existing crossfade, so any remaining driver upload is
