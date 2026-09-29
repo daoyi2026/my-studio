@@ -9,7 +9,7 @@ import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=19";
-import { IntroLoader } from "../intro/IntroLoader.js?v=13";
+import { IntroLoader } from "../intro/IntroLoader.js?v=14";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
@@ -923,13 +923,10 @@ export class RoomApp {
       } finally {
         visibleMeshes.forEach((mesh) => { mesh.visible = true; });
       }
-      // Confirm the fully restored scene uses only the programs prepared by
-      // the batches, then warm the accepted orthographic opening camera once.
-      this.renderer.render(this.scene, warmCamera);
-      report(98.5, "FINAL CHECK");
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      this.renderer.render(this.scene, this.camera);
-      this.screens.render();
+      // Do not pay a second full-scene draw behind the last 0.6% of the
+      // loader. The first live animation frame uses the same opening camera
+      // during the existing crossfade, so any remaining driver upload is
+      // naturally hidden there instead of blocking the room at 99%.
       report(99.4, "FINAL CHECK");
       await new Promise((resolve) => requestAnimationFrame(resolve));
       return "batched-render";
