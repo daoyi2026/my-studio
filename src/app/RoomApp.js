@@ -885,11 +885,9 @@ export class RoomApp {
 
   async warmFrames(onProgress = null) {
     const report = (progress, status) => onProgress?.({ progress, status });
-    const constrainedDevice = matchMedia("(pointer: coarse)").matches || viewportSize().width <= 760;
     report(93, "PREPARING SCENE");
-    // Compile the perspective-camera shader variants while the loading cover
-    // is still present. Otherwise the first orthographic-to-perspective move
-    // can pay that cost in the middle of the visible transition.
+    // Prepare the perspective-camera shader variants behind the loading cover
+    // without allowing one full-scene draw to monopolize the main thread.
     const warmCamera = this.perspectiveCamera.clone();
     warmCamera.position.copy(this.camera.position);
     warmCamera.up.copy(this.camera.up);
@@ -897,10 +895,10 @@ export class RoomApp {
     warmCamera.lookAt(this.controls.target);
     warmCamera.updateProjectionMatrix();
 
-    if (constrainedDevice) {
-      // A full-scene compile asks mobile Safari/Chrome to prepare hundreds of
-      // materials in one JavaScript task. Split the same work into bounded
-      // batches so the SVG pen and progress label receive frames in between.
+    {
+      // A full-scene warm-up can prepare hundreds of materials in one
+      // JavaScript task. Split the same work into bounded batches on every
+      // device so the SVG pen and progress label receive frames in between.
       const visibleMeshes = [];
       this.scene.traverse((object) => {
         if (object.isMesh && object.visible) visibleMeshes.push(object);
@@ -935,28 +933,6 @@ export class RoomApp {
       await new Promise((resolve) => requestAnimationFrame(resolve));
       return "batched-render";
     }
-
-    // Do not gate first entry on compileAsync. On some desktop WebGL drivers
-    // the call can spend tens of seconds synchronously compiling before its
-    // promise is returned, so a Promise.race timeout cannot bound the wait.
-    // The bounded render warm-up below prepares the same active camera and
-    // materials without leaving the cover at 100% while sceneReady is false.
-    const warmupStatus = "render-only";
-    report(94, "REFINING RENDER STATE");
-    // The render warm-up pays the first perspective cost behind the loading
-    // cover so the visible orthographic-to-perspective handoff stays smooth.
-    for (let i = 0; i < 3; i += 1) {
-      this.renderer.render(this.scene, warmCamera);
-      report(96 + (i + 1) * .8, "REFINING RENDER STATE");
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
-    for (let i = 0; i < 3; i += 1) {
-      this.renderer.render(this.scene, this.camera);
-      this.screens.render();
-      report(98.4 + (i + 1) * .45, "FINAL CHECK");
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
-    return warmupStatus;
   }
 
   updateMotion(elapsed) {
