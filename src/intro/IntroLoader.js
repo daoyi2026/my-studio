@@ -223,7 +223,7 @@ function debugRequested() {
  * Independent intro-loader controller.
  *
  * The controller owns only the temporary line-art layer. The host application
- * owns the Three.js scene and opens the second gate with markSceneReady().
+ * owns the Three.js scene and opens the reveal gate with markSceneReady().
  * The loader never changes materials, lights, models, cameras, or controls.
  */
 export class IntroLoader {
@@ -284,6 +284,7 @@ export class IntroLoader {
     this.lastComfortTarget = 0;
     this.sceneReady = false;
     this.lineArtReady = false;
+    this.lineArtSettled = false;
     this.warmupStatus = "pending";
     this.lineArtSource = "pending";
     this.slowMode = false;
@@ -394,20 +395,18 @@ export class IntroLoader {
   }
 
   renderProgress(status = null) {
-    // Before the line art finishes, the visible frontier follows the drawing;
-    // after that, it follows the host until the scene gate opens. The shared
-    // value may still move by the small bounded comfort allowance during a
-    // stall, but it must never announce readiness for only one gate.
-    // A completed line drawing is not the same thing as a ready Three.js
-    // scene. Keep the displayed percentage tied to the host until both gates
-    // are open; otherwise the decorative SVG can announce 100% while
-    // RoomApp is still inside renderer warm-up.
-    const completionReady = this.sceneReady && this.lineArtReady;
-    const visibleProgress = completionReady
-      ? 100
-      : this.lineArtReady
-        ? Math.min(99.4, this.progress)
-        : this.lineProgress;
+    // Before the scene is ready, the visible frontier follows the drawing;
+    // once the host scene is ready, the loader may finish and reveal even if
+    // the decorative SVG is still drawing its last contours. The line art is
+    // a visual cover for scene preparation, not a second scene-readiness gate.
+    // This keeps a slow SVG tail from consuming an unbounded final 1% after
+    // the model and renderer are already ready.
+    const completionReady = this.sceneReady;
+    // The number represents host work (model, textures, and renderer), not
+    // the decorative SVG's stroke-drawing speed. Keep the line animation
+    // visually independent so a slow SVG frame cannot manufacture a long
+    // 99% plateau or pull the percentage backward.
+    const visibleProgress = completionReady ? 100 : Math.min(99.4, this.progress);
     const roundedProgress = Math.round(visibleProgress);
     const slowSuffix = this.slowMode && this.root.classList.contains("is-slow-message")
       ? ` · ${this.options.slowStatus}`
@@ -518,6 +517,7 @@ export class IntroLoader {
     this.lineProgress = 0;
     this.sceneReady = false;
     this.lineArtReady = false;
+    this.lineArtSettled = false;
     this.warmupStatus = "pending";
     this.lineArtSource = "pending";
     this.slowMode = false;
@@ -565,11 +565,13 @@ export class IntroLoader {
     }
 
     if (token !== this.runToken) return this.getSnapshot();
+    if (this.lineArtSettled) return this.getSnapshot();
     this.installSvg(svg);
+    if (this.lineArtSettled) return this.getSnapshot();
     this.setState(STATES.DRAWING, this.lineArtSource === "fallback-single-path" ? "fallback" : "path-growth");
     this.setProgress(0);
     await this.animatePaths(token);
-    if (token !== this.runToken || this.state === STATES.ERROR) return this.getSnapshot();
+    if (token !== this.runToken || this.state === STATES.ERROR || this.lineArtSettled) return this.getSnapshot();
 
     this.lineArtReady = true;
     this.lineProgress = 100;
@@ -586,6 +588,21 @@ export class IntroLoader {
     this.renderDebug();
     this.maybeComplete();
     return this.getSnapshot();
+  }
+
+  /** Stop the decorative tail once the host scene is ready to reveal. */
+  settleLineArtForReveal() {
+    if (this.lineArtSettled) return;
+    this.lineArtSettled = true;
+    clearTimeout(this.animationCompletionFallbackTimer);
+    this.animationCompletionFallbackTimer = 0;
+    cancelAnimationFrame(this.animationFrame);
+    this.animationFrame = 0;
+    this.lineProgress = 100;
+    this.lineArtReady = true;
+    const resolveAnimation = this.resolveAnimation;
+    this.resolveAnimation = null;
+    resolveAnimation?.();
   }
 
   completePathAnimation(token) {
@@ -621,7 +638,7 @@ export class IntroLoader {
 
   beginSlowTimers() {
     this.slowTimer = setTimeout(() => {
-      if (this.state === STATES.READY || this.state === STATES.ERROR || (this.sceneReady && this.lineArtReady)) return;
+      if (this.state === STATES.READY || this.state === STATES.ERROR || this.sceneReady) return;
       this.root.classList.add("is-slow");
       this.slowMode = true;
       this.renderDebug();
@@ -631,7 +648,7 @@ export class IntroLoader {
           || this.state === STATES.ERROR
           || this.state === STATES.COMPLETING
           || this.state === STATES.TRANSITION
-          || (this.sceneReady && this.lineArtReady)
+          || this.sceneReady
         ) return;
         this.root.classList.add("is-slow-message");
         this.setStatus("");
@@ -969,9 +986,9 @@ export class IntroLoader {
     if (this.state === STATES.ERROR) return;
     this.sceneReady = true;
     this.warmupStatus = warmup;
-    this.setState(this.lineArtReady ? STATES.COMPLETING : STATES.WAITING, "host-ready");
-    // The host may have reached 100 while the line art was already complete;
-    // refresh the shared copy now that the second gate is actually open.
+    this.setState(STATES.COMPLETING, "host-ready");
+    // The host scene owns readiness. The line art can continue as a visual
+    // cover until the reveal begins, but it must not hold the room at 99%.
     this.renderProgress();
     this.maybeComplete();
   }
@@ -990,7 +1007,7 @@ export class IntroLoader {
   }
 
   maybeComplete() {
-    if (!this.revealRequested || !this.sceneReady || !this.lineArtReady) return;
+    if (!this.revealRequested || !this.sceneReady) return;
     if (this.completionPending || this.transitionStarted || this.state === STATES.ERROR || this.state === STATES.READY) return;
     clearTimeout(this.slowTimer);
     clearTimeout(this.slowMessageTimer);
@@ -1001,7 +1018,7 @@ export class IntroLoader {
     this.completionPending = true;
     this.completionTimer = setTimeout(() => {
       this.completionPending = false;
-      if (!this.sceneReady || !this.lineArtReady || this.state === STATES.ERROR) return;
+      if (!this.sceneReady || this.state === STATES.ERROR) return;
       this.completionTimer = setTimeout(() => this.beginTransition(), this.reducedMotion ? 0 : this.options.completeHoldMs);
     }, remaining);
   }
@@ -1009,6 +1026,7 @@ export class IntroLoader {
   async beginTransition() {
     if (this.transitionStarted || this.state === STATES.ERROR) return;
     this.transitionStarted = true;
+    this.settleLineArtForReveal();
     clearTimeout(this.slowTimer);
     clearTimeout(this.slowMessageTimer);
     this.root.classList.remove("is-slow", "is-slow-message");
