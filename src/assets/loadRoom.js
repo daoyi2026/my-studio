@@ -2,6 +2,17 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 const rugTextureCache = new WeakMap();
+const ROOM_LOAD_RETRY_DELAYS_MS = [0, 800, 1800];
+
+function isRetryableRoomLoadError(error) {
+  const message = String(error?.message || error || "");
+  return /failed to fetch|load failed|networkerror|network request failed/i.test(message);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function paleGreyGreenRugTexture(source) {
   if (!source?.image || rugTextureCache.has(source)) return rugTextureCache.get(source) || source;
   const image = source.image, canvas = document.createElement("canvas");
@@ -43,7 +54,7 @@ function paleGreyGreenRugTexture(source) {
   rugTextureCache.set(source, texture); return texture;
 }
 
-export function loadRoom(url, onProgress) {
+function loadRoomOnce(url, onProgress) {
   const loader = new GLTFLoader();
   return new Promise((resolve, reject) => {
     loader.load(url, (gltf) => resolve(gltf.scene), (event) => {
@@ -51,6 +62,21 @@ export function loadRoom(url, onProgress) {
       onProgress?.(event.loaded / event.total);
     }, reject);
   });
+}
+
+export async function loadRoom(url, onProgress) {
+  let lastError;
+  for (let attempt = 0; attempt < ROOM_LOAD_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) await wait(ROOM_LOAD_RETRY_DELAYS_MS[attempt]);
+    try {
+      return await loadRoomOnce(url, onProgress);
+    } catch (error) {
+      lastError = error;
+      const finalAttempt = attempt === ROOM_LOAD_RETRY_DELAYS_MS.length - 1;
+      if (finalAttempt || !isRetryableRoomLoadError(error)) throw error;
+    }
+  }
+  throw lastError;
 }
 
 export function configureRoomMaterials(root, renderer) {

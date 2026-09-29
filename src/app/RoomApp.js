@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=14";
-import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=12";
+import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=13";
 import { applyPhotos } from "../assets/applyPhotos.js?v=11";
 import { CameraDirector } from "../camera/CameraDirector.js?v=15";
 import { ScreenLayer } from "../rendering/ScreenLayer.js?v=15";
