@@ -936,33 +936,15 @@ export class RoomApp {
       return "batched-render";
     }
 
-    let warmupStatus = "render-only";
-    if (this.renderer.compileAsync) {
-      report(94, "WARMING MATERIALS");
-      let pulse = 94;
-      const pulseTimer = setInterval(() => {
-        pulse = Math.min(95.5, pulse + .22);
-        report(pulse, "WARMING MATERIALS");
-      }, 420);
-      const compileResult = await Promise.race([
-        this.renderer.compileAsync(this.scene, warmCamera)
-          .then(() => "compiled")
-          .catch((error) => {
-            console.warn("[room] Async shader warm-up failed; continuing with render warm-up", error);
-            return "failed";
-          }),
-        new Promise((resolve) => setTimeout(() => resolve("timeout"), 6000)),
-      ]);
-      clearInterval(pulseTimer);
-      warmupStatus = compileResult === "compiled" ? "compileAsync+render" : "render-only";
-      report(96, "REFINING RENDER STATE");
-    } else {
-      warmupStatus = "render-only";
-      report(95, "REFINING RENDER STATE");
-    }
-    // `compileAsync` prepares shader programs but does not pay every first
-    // perspective render cost. Draw behind the loading cover so the visible
-    // orthographic-to-perspective handoff does not inherit those slow frames.
+    // Do not gate first entry on compileAsync. On some desktop WebGL drivers
+    // the call can spend tens of seconds synchronously compiling before its
+    // promise is returned, so a Promise.race timeout cannot bound the wait.
+    // The bounded render warm-up below prepares the same active camera and
+    // materials without leaving the cover at 100% while sceneReady is false.
+    const warmupStatus = "render-only";
+    report(94, "REFINING RENDER STATE");
+    // The render warm-up pays the first perspective cost behind the loading
+    // cover so the visible orthographic-to-perspective handoff stays smooth.
     for (let i = 0; i < 3; i += 1) {
       this.renderer.render(this.scene, warmCamera);
       report(96 + (i + 1) * .8, "REFINING RENDER STATE");
