@@ -394,16 +394,25 @@ export class IntroLoader {
   }
 
   renderProgress(status = null) {
-    // The visible percentage, copy, and drawn frontier are one product state.
-    // The host's real progress remains the completion gate, while this shared
-    // visual value may move by the small bounded comfort allowance during a
-    // stall. This prevents a fast warm-up from showing 98% beside a 31% sketch.
-    const visibleProgress = this.lineArtReady ? 100 : this.lineProgress;
+    // Before the line art finishes, the visible frontier follows the drawing;
+    // after that, it follows the host until the scene gate opens. The shared
+    // value may still move by the small bounded comfort allowance during a
+    // stall, but it must never announce readiness for only one gate.
+    // A completed line drawing is not the same thing as a ready Three.js
+    // scene. Keep the displayed percentage tied to the host until both gates
+    // are open; otherwise the decorative SVG can announce 100% while
+    // RoomApp is still inside renderer warm-up.
+    const completionReady = this.sceneReady && this.lineArtReady;
+    const visibleProgress = completionReady
+      ? 100
+      : this.lineArtReady
+        ? Math.min(99.4, this.progress)
+        : this.lineProgress;
     const roundedProgress = Math.round(visibleProgress);
     const slowSuffix = this.slowMode && this.root.classList.contains("is-slow-message")
       ? ` · ${this.options.slowStatus}`
       : "";
-    const progressStage = visibleProgress >= 100
+    const progressStage = completionReady
       ? "ROOM READY"
       : `${this.getProgressStage(visibleProgress)}${slowSuffix}`;
     if (roundedProgress !== this.lastRenderedProgress) {
@@ -568,7 +577,10 @@ export class IntroLoader {
       this.setProgress(100, "ROOM READY");
       this.setState(STATES.COMPLETING, "line-art-complete");
     } else {
-      this.setProgress(100, "LINE ART READY · WAITING FOR SCENE");
+      // Do not promote the host progress to 100 just because the decorative
+      // line art finished first. The scene gate may still be warming shaders
+      // or completing its final render preparation.
+      this.renderProgress();
       this.setState(STATES.WAITING, "line-art-complete");
     }
     this.renderDebug();
