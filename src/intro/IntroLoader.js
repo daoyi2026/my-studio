@@ -242,13 +242,10 @@ export class IntroLoader {
       // sitting at 100% for the duration of the old seven-second fade.
       crossfadeDurationMs: 1200,
       reducedMotionDurationMs: 500,
-      comfortLeadPercent: 2.5,
-      comfortStallCapPercent: 6,
       visualCompletionGuardPercent: 1.5,
-      // A stalled host still gets a visible, bounded pen advance. The cap
-      // keeps this reassuring motion honest without allowing the line art to
-      // overtake a genuinely slow scene by more than a small amount.
-      comfortDriftSpeedPercentPerSecond: 1.8,
+      // Keep the line and percentage tied to real host progress. A slow
+      // network must pause both at the same stage instead of being hidden by
+      // an artificial comfort advance near the end.
       lineDrawMinSpeedPercentPerSecond: 7,
       lineDrawMaxSpeedPercentPerSecond: 18,
       lineDrawSpeedMultiplier: 1.1,
@@ -403,11 +400,10 @@ export class IntroLoader {
     // the screen is still blank. Once paths are installed, the percentage and
     // line advance together, with the host progress remaining an upper bound.
     const completionReady = this.sceneReady && this.lineArtReady;
-    const hostFrontier = Math.min(99.4, this.progress);
     const lineFrontier = this.pathRecords.length
       ? Math.min(99.4, this.lineProgress)
       : 0;
-    const visibleProgress = completionReady ? 100 : Math.min(hostFrontier, lineFrontier);
+    const visibleProgress = completionReady ? 100 : lineFrontier;
     this.displayProgress = visibleProgress;
     const roundedProgress = Math.round(visibleProgress);
     const slowSuffix = this.slowMode && this.root.classList.contains("is-slow-message")
@@ -438,8 +434,8 @@ export class IntroLoader {
   }
 
   getVisualTarget(actualProgress) {
-    // A true zero-progress frame must remain empty. The comfort lead is only
-    // allowed after the host has reported the first real loading increment.
+    // A true zero-progress frame must remain empty. The line begins only
+    // after the host has reported the first real loading increment.
     if (actualProgress <= 0) return 0;
     if (actualProgress >= 100) return 100;
     const visualStartPercent = clamp(Number(this.options.visualStartPercent) / 100) * 100;
@@ -447,7 +443,7 @@ export class IntroLoader {
     const visualProgress = ((actualProgress - visualStartPercent) / Math.max(1, 100 - visualStartPercent)) * 100;
     const completionGuard = clamp(Number(this.options.visualCompletionGuardPercent) / 100) * 100;
     const latestSafeTarget = Math.max(0, 100 - completionGuard);
-    return Math.min(latestSafeTarget, visualProgress + this.options.comfortLeadPercent);
+    return Math.min(latestSafeTarget, visualProgress);
   }
 
   getLineDrawSpeed() {
@@ -469,18 +465,9 @@ export class IntroLoader {
       this.lastComfortTarget = 100;
       return 100;
     }
-    const stalledSeconds = Math.max(0, performance.now() - this.progressLastAdvancedAt) / 1000;
-    const comfortDrift = Math.min(
-      this.options.comfortStallCapPercent,
-      stalledSeconds * this.options.comfortDriftSpeedPercentPerSecond,
-    );
-    const target = Math.min(
-      100 - this.options.visualCompletionGuardPercent,
-      baseTarget + comfortDrift,
-    );
-    // A small real-progress update must not pull the visual frontier backward
-    // after it has already provided reassurance during a stall. Keeping this
-    // target monotonic prevents a visible freeze-and-catch-up rhythm.
+    const target = baseTarget;
+    // Keep the target monotonic while the transport reports progress. The
+    // target never advances on its own during a network or parsing stall.
     this.lastComfortTarget = Math.max(this.lastComfortTarget, target);
     return this.lastComfortTarget;
   }
@@ -956,21 +943,15 @@ export class IntroLoader {
         if (gap > 0) {
           // Keep the authored stroke queue continuous. A host progress jump
           // must never reveal an entire group in one frame; the pen catches
-          // up at a bounded speed instead. Once it has caught up to the real
-          // load, a stalled host gets only the capped comfort drift above.
-          const actualHasRoom = actualProgress >= this.lineProgress;
+          // up at a bounded speed instead.
           const drawSpeed = actualProgress >= 100
             ? Math.max(this.getLineDrawSpeed(), this.options.lineDrawMaxSpeedPercentPerSecond)
-            : actualHasRoom
-              ? this.getLineDrawSpeed()
-              : this.options.comfortDriftSpeedPercentPerSecond;
+            : this.getLineDrawSpeed();
           this.lineProgress = Math.min(visualTarget, this.lineProgress + drawSpeed * deltaSeconds);
         }
         // The line drawing is a visual representation of the host's real
-        // loading progress. It may lead by a small, capped comfort allowance
-        // while the host is stalled, but it cannot finish before the real
-        // progress reaches 100%. This keeps a slow load visibly alive without
-        // inventing a fake percentage or skipping over intermediate strokes.
+        // loading progress. It cannot advance while the real host progress is
+        // stalled, and it cannot finish before the host reaches 100%.
         this.renderPathProgress();
         this.renderProgress();
         this.renderDebug();
