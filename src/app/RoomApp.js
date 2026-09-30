@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=14";
-import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=13";
+import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=14";
 import { applyPhotos } from "../assets/applyPhotos.js?v=11";
 import { CameraDirector } from "../camera/CameraDirector.js?v=15";
 import { ScreenLayer } from "../rendering/ScreenLayer.js?v=15";
@@ -9,7 +9,7 @@ import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=19";
-import { IntroLoader } from "../intro/IntroLoader.js?v=18";
+import { IntroLoader } from "../intro/IntroLoader.js?v=19";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
@@ -890,19 +890,12 @@ export class RoomApp {
   async warmFrames(onProgress = null) {
     const report = (progress, status) => onProgress?.({ progress, status });
     report(93, "PREPARING SCENE");
-    // Do not call renderer.render() or compileAsync() behind the loading
-    // cover. Both operations can be non-interruptible on a cold GPU; the
-    // previous batched version still held the browser at 99% for minutes.
-    // Reserve two paint opportunities for the visible progress timeline and
-    // let the first real room frame perform the unavoidable driver upload
-    // after the cover has already started its fade.
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    if (this.warmupCancelled) return "deferred-render";
     report(96, "REFINING RENDER STATE");
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    if (this.warmupCancelled) return "deferred-render";
     report(99.4, "FINAL CHECK");
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    // Do not make the readiness gate depend on requestAnimationFrame. A tab
+    // can be backgrounded or temporarily compositor-starved while the line
+    // art continues to exist, and an rAF-only gate would strand the loader at
+    // its final visible percentage indefinitely.
     return "deferred-render";
   }
 

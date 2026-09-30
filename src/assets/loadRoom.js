@@ -59,7 +59,12 @@ function loadRoomOnce(url, onProgress) {
   return new Promise((resolve, reject) => {
     loader.load(url, (gltf) => resolve(gltf.scene), (event) => {
       if (!event.total) return;
-      onProgress?.(event.loaded / event.total);
+      // Some GitHub Pages responses report a compressed byte total that is
+      // smaller than the decoded stream. Keep transport progress inside the
+      // room-loading phase so it can never announce 100% before parsing and
+      // the later scene gates have completed.
+      const ratio = Math.min(1, Math.max(0, event.loaded / event.total));
+      onProgress?.(ratio);
     }, reject);
   });
 }

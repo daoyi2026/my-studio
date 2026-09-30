@@ -345,7 +345,7 @@ export class IntroLoader {
       state: this.state,
       progress: this.progress,
       loadProgress: this.progress,
-      displayProgress: this.lineProgress,
+      displayProgress: this.displayProgress,
       lineProgress: this.lineProgress,
       sceneReady: this.sceneReady,
       lineArtReady: this.lineArtReady,
@@ -398,22 +398,16 @@ export class IntroLoader {
   }
 
   renderProgress(status = null) {
-    // The host's real progress is the upper bound, while the line drawing is
-    // the visible pacing frontier. If the model and renderer finish quickly,
-    // the percentage now advances with the same 1-99 animation instead of
-    // jumping to 99 and waiting for a final hidden task. If the host is the
-    // slower side, it still controls the number and no progress is invented.
-    // Both gates must be ready before the cover is allowed to leave, so the
-    // renderer warm-up can run during the line-art window rather than after it.
+    // The drawn frontier is the visible loading state. Do not show transport
+    // progress before the SVG exists; otherwise the number can reach 7% while
+    // the screen is still blank. Once paths are installed, the percentage and
+    // line advance together, with the host progress remaining an upper bound.
     const completionReady = this.sceneReady && this.lineArtReady;
     const hostFrontier = Math.min(99.4, this.progress);
     const lineFrontier = this.pathRecords.length
-      ? Math.min(99.4, this.lineProgress + this.options.comfortLeadPercent)
-      : hostFrontier;
-    const candidateProgress = Math.min(hostFrontier, lineFrontier);
-    const visibleProgress = completionReady
-      ? 100
-      : Math.max(this.displayProgress, candidateProgress);
+      ? Math.min(99.4, this.lineProgress)
+      : 0;
+    const visibleProgress = completionReady ? 100 : Math.min(hostFrontier, lineFrontier);
     this.displayProgress = visibleProgress;
     const roundedProgress = Math.round(visibleProgress);
     const slowSuffix = this.slowMode && this.root.classList.contains("is-slow-message")
