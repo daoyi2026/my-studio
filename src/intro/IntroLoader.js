@@ -242,6 +242,11 @@ export class IntroLoader {
       // sitting at 100% for the duration of the old seven-second fade.
       crossfadeDurationMs: 7000,
       reducedMotionDurationMs: 500,
+      comfortLeadPercent: 2.5,
+      comfortStallCapPercent: 6,
+      // Keep the pen moving between real transport updates without letting
+      // it outrun a genuinely slow scene by more than a small amount.
+      comfortDriftSpeedPercentPerSecond: 1.8,
       visualCompletionGuardPercent: 1.5,
       // Keep the line and percentage tied to real host progress. A slow
       // network must pause both at the same stage instead of being hidden by
@@ -443,7 +448,7 @@ export class IntroLoader {
     const visualProgress = ((actualProgress - visualStartPercent) / Math.max(1, 100 - visualStartPercent)) * 100;
     const completionGuard = clamp(Number(this.options.visualCompletionGuardPercent) / 100) * 100;
     const latestSafeTarget = Math.max(0, 100 - completionGuard);
-    return Math.min(latestSafeTarget, visualProgress);
+    return Math.min(latestSafeTarget, visualProgress + this.options.comfortLeadPercent);
   }
 
   getLineDrawSpeed() {
@@ -465,9 +470,17 @@ export class IntroLoader {
       this.lastComfortTarget = 100;
       return 100;
     }
-    const target = baseTarget;
+    const stalledSeconds = Math.max(0, performance.now() - this.progressLastAdvancedAt) / 1000;
+    const comfortDrift = Math.min(
+      this.options.comfortStallCapPercent,
+      stalledSeconds * this.options.comfortDriftSpeedPercentPerSecond,
+    );
+    const target = Math.min(
+      100 - this.options.visualCompletionGuardPercent,
+      baseTarget + comfortDrift,
+    );
     // Keep the target monotonic while the transport reports progress. The
-    // target never advances on its own during a network or parsing stall.
+    // comfort advance is bounded and never reaches the final gate by itself.
     this.lastComfortTarget = Math.max(this.lastComfortTarget, target);
     return this.lastComfortTarget;
   }
@@ -943,15 +956,19 @@ export class IntroLoader {
         if (gap > 0) {
           // Keep the authored stroke queue continuous. A host progress jump
           // must never reveal an entire group in one frame; the pen catches
-          // up at a bounded speed instead.
+          // up at a bounded speed instead. During a transport pause it uses
+          // only the small comfort drift budget above.
+          const actualHasRoom = actualProgress >= this.lineProgress;
           const drawSpeed = actualProgress >= 100
             ? Math.max(this.getLineDrawSpeed(), this.options.lineDrawMaxSpeedPercentPerSecond)
-            : this.getLineDrawSpeed();
+            : actualHasRoom
+              ? this.getLineDrawSpeed()
+              : this.options.comfortDriftSpeedPercentPerSecond;
           this.lineProgress = Math.min(visualTarget, this.lineProgress + drawSpeed * deltaSeconds);
         }
         // The line drawing is a visual representation of the host's real
-        // loading progress. It cannot advance while the real host progress is
-        // stalled, and it cannot finish before the host reaches 100%.
+        // loading progress. It may lead by only the bounded comfort allowance
+        // and cannot finish before the host reaches 100%.
         this.renderPathProgress();
         this.renderProgress();
         this.renderDebug();
