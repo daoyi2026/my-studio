@@ -9,7 +9,7 @@ import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=19";
-import { IntroLoader } from "../intro/IntroLoader.js?v=16";
+import { IntroLoader } from "../intro/IntroLoader.js?v=17";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
@@ -165,10 +165,8 @@ export class RoomApp {
       // repeatable behavior and is excluded below.
       this.firstOrdinaryClickPending = true;
       // The warm-up gate is already complete. Open it before the first live
-      // render so an expensive mobile frame cannot leave the cover saying
-      // 100% while the state machine still believes the scene is unready.
+      // render so the state machine never says 100% while the scene is unready.
       this.loading.markSceneReady({ warmup: warmupStatus });
-      this.animate();
       const stopWatchingReveal = this.loading.onStateChange(({ state }) => {
         if (state !== IntroLoader.STATES.TRANSITION) return;
         stopWatchingReveal();
@@ -181,6 +179,10 @@ export class RoomApp {
         // normal continuous shadow updates immediately afterwards so moving
         // objects and every accepted day/night or lamp effect remain intact.
         requestAnimationFrame(() => {
+          // Start the ordinary render loop only after the cover has entered
+          // its fade. Any remaining driver upload is then hidden by the same
+          // transition instead of blocking the 99% loader frame.
+          this.animate();
           this.renderer.shadowMap.needsUpdate = true;
           this.renderer.shadowMap.autoUpdate = true;
         });
@@ -916,14 +918,18 @@ export class RoomApp {
     warmCamera.updateProjectionMatrix();
 
     {
-      // A full-scene warm-up can prepare hundreds of materials in one
-      // JavaScript task. Split the same work into bounded batches on every
-      // device so the SVG pen and progress label receive frames in between.
+      // Compile the scene in small visibility batches. A real renderer draw
+      // also uploads every geometry buffer and can monopolize the main thread
+      // for tens of seconds on a cold GPU, so it is deliberately excluded
+      // from the loader gate. The first live draw is scheduled after the
+      // cover starts fading instead of being paid at 99%.
       const visibleMeshes = [];
       this.scene.traverse((object) => {
         if (object.isMesh && object.visible) visibleMeshes.push(object);
       });
       const batchSize = Math.max(4, Math.ceil(visibleMeshes.length / 96));
+      const canCompile = typeof this.renderer.compileAsync === "function";
+      let compiled = false;
       visibleMeshes.forEach((mesh) => { mesh.visible = false; });
       try {
         for (let offset = 0; offset < visibleMeshes.length; offset += batchSize) {
@@ -931,18 +937,20 @@ export class RoomApp {
           const batch = visibleMeshes.slice(offset, offset + batchSize);
           const startRatio = Math.min(1, offset / Math.max(1, visibleMeshes.length));
           report(93 + startRatio * 5.8, "REFINING RENDER STATE");
-          // Paint the progress frontier before entering the synchronous GPU
-          // draw. Without this yield a slow first pipeline compile leaves the
-          // cover showing the previous rounded value (usually 99%) for the
-          // whole batch, even though the work is already underway.
+          // Paint the progress frontier before starting shader compilation.
+          // This keeps the visible timeline moving while the driver prepares
+          // the current batch instead of hiding that work at the end.
           await new Promise((resolve) => requestAnimationFrame(resolve));
           if (this.warmupCancelled) return "deferred-render";
           batch.forEach((mesh) => { mesh.visible = true; });
-          // Render the batch directly. `compileAsync()` still deferred vertex
-          // buffer upload and parts of the Metal pipeline until the first
-          // full draw, recreating a long 99% pause. A real bounded draw pays
-          // the exact same accepted material cost in small, yieldable pieces.
-          this.renderer.render(this.scene, warmCamera);
+          if (canCompile) {
+            try {
+              await this.renderer.compileAsync(this.scene, warmCamera);
+              compiled = true;
+            } catch (error) {
+              console.warn("[room] startup shader compile skipped", error);
+            }
+          }
           batch.forEach((mesh) => { mesh.visible = false; });
           const ratio = Math.min(1, (offset + batch.length) / visibleMeshes.length);
           report(93 + ratio * 5.8, "REFINING RENDER STATE");
@@ -953,13 +961,9 @@ export class RoomApp {
         visibleMeshes.forEach((mesh) => { mesh.visible = true; });
       }
       if (this.warmupCancelled) return "deferred-render";
-      // Do not pay a second full-scene draw behind the last 0.6% of the
-      // loader. The first live animation frame uses the same opening camera
-      // during the existing crossfade, so any remaining driver upload is
-      // naturally hidden there instead of blocking the room at 99%.
       report(99.4, "FINAL CHECK");
       await new Promise((resolve) => requestAnimationFrame(resolve));
-      return "batched-render";
+      return compiled ? "compiled-batches" : "deferred-render";
     }
   }
 
