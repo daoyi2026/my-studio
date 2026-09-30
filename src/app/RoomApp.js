@@ -9,17 +9,12 @@ import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=19";
-import { IntroLoader } from "../intro/IntroLoader.js?v=17";
+import { IntroLoader } from "../intro/IntroLoader.js?v=18";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
 
 const INTRO_LINE_ART_URL = "./public/assets/intro/room-line-art-native-grouped-v14-sketch-v5.svg?rev=production-clean-wall-v5";
-// Let the renderer use the same window as the line-art drawing. The budget is
-// still finite on unusually slow devices, but normal startup work is no longer
-// forced to spill into the first visible room frame after a short 2.6s cutoff.
-const STARTUP_WARMUP_BUDGET_MS = 5600;
-
 function viewportSize() {
   const viewport = window.visualViewport;
   return {
@@ -145,20 +140,7 @@ export class RoomApp {
       this.renderer.shadowMap.needsUpdate = false;
       this.loading.updateLoadProgress(92, "PREPARING SCENE");
       this.warmupCancelled = false;
-      const warmupPromise = this.warmFrames(({ progress, status }) => this.loading.updateLoadProgress(progress, status));
-      let warmupTimer = 0;
-      const warmupBudget = new Promise((resolve) => {
-        warmupTimer = window.setTimeout(() => {
-          this.warmupCancelled = true;
-          resolve("deferred-render");
-        }, STARTUP_WARMUP_BUDGET_MS);
-      });
-      let warmupStatus;
-      try {
-        warmupStatus = await Promise.race([warmupPromise, warmupBudget]);
-      } finally {
-        window.clearTimeout(warmupTimer);
-      }
+      const warmupStatus = await this.warmFrames(({ progress, status }) => this.loading.updateLoadProgress(progress, status));
       this.loading.updateLoadProgress(100, "ROOM READY");
       // The room deliberately opens at night. The first ordinary page click
       // then reveals daytime once; the explicit mode toggle retains its own
@@ -908,63 +890,20 @@ export class RoomApp {
   async warmFrames(onProgress = null) {
     const report = (progress, status) => onProgress?.({ progress, status });
     report(93, "PREPARING SCENE");
-    // Prepare the perspective-camera shader variants behind the loading cover
-    // without allowing one full-scene draw to monopolize the main thread.
-    const warmCamera = this.perspectiveCamera.clone();
-    warmCamera.position.copy(this.camera.position);
-    warmCamera.up.copy(this.camera.up);
-    warmCamera.fov = CAMERA.localFov;
-    warmCamera.lookAt(this.controls.target);
-    warmCamera.updateProjectionMatrix();
-
-    {
-      // Compile the scene in small visibility batches. A real renderer draw
-      // also uploads every geometry buffer and can monopolize the main thread
-      // for tens of seconds on a cold GPU, so it is deliberately excluded
-      // from the loader gate. The first live draw is scheduled after the
-      // cover starts fading instead of being paid at 99%.
-      const visibleMeshes = [];
-      this.scene.traverse((object) => {
-        if (object.isMesh && object.visible) visibleMeshes.push(object);
-      });
-      const batchSize = Math.max(4, Math.ceil(visibleMeshes.length / 96));
-      const canCompile = typeof this.renderer.compileAsync === "function";
-      let compiled = false;
-      visibleMeshes.forEach((mesh) => { mesh.visible = false; });
-      try {
-        for (let offset = 0; offset < visibleMeshes.length; offset += batchSize) {
-          if (this.warmupCancelled) return "deferred-render";
-          const batch = visibleMeshes.slice(offset, offset + batchSize);
-          const startRatio = Math.min(1, offset / Math.max(1, visibleMeshes.length));
-          report(93 + startRatio * 5.8, "REFINING RENDER STATE");
-          // Paint the progress frontier before starting shader compilation.
-          // This keeps the visible timeline moving while the driver prepares
-          // the current batch instead of hiding that work at the end.
-          await new Promise((resolve) => requestAnimationFrame(resolve));
-          if (this.warmupCancelled) return "deferred-render";
-          batch.forEach((mesh) => { mesh.visible = true; });
-          if (canCompile) {
-            try {
-              await this.renderer.compileAsync(this.scene, warmCamera);
-              compiled = true;
-            } catch (error) {
-              console.warn("[room] startup shader compile skipped", error);
-            }
-          }
-          batch.forEach((mesh) => { mesh.visible = false; });
-          const ratio = Math.min(1, (offset + batch.length) / visibleMeshes.length);
-          report(93 + ratio * 5.8, "REFINING RENDER STATE");
-          await new Promise((resolve) => requestAnimationFrame(resolve));
-          if (this.warmupCancelled) return "deferred-render";
-        }
-      } finally {
-        visibleMeshes.forEach((mesh) => { mesh.visible = true; });
-      }
-      if (this.warmupCancelled) return "deferred-render";
-      report(99.4, "FINAL CHECK");
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      return compiled ? "compiled-batches" : "deferred-render";
-    }
+    // Do not call renderer.render() or compileAsync() behind the loading
+    // cover. Both operations can be non-interruptible on a cold GPU; the
+    // previous batched version still held the browser at 99% for minutes.
+    // Reserve two paint opportunities for the visible progress timeline and
+    // let the first real room frame perform the unavoidable driver upload
+    // after the cover has already started its fade.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    if (this.warmupCancelled) return "deferred-render";
+    report(96, "REFINING RENDER STATE");
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    if (this.warmupCancelled) return "deferred-render";
+    report(99.4, "FINAL CHECK");
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    return "deferred-render";
   }
 
   updateMotion(elapsed) {

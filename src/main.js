@@ -1,4 +1,4 @@
-import { RoomApp } from "./app/RoomApp.js?v=88";
+import { RoomApp } from "./app/RoomApp.js?v=89";
 
 const app = new RoomApp();
 window.roomApp = app;
