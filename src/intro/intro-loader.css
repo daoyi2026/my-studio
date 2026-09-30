@@ -1,7 +1,7 @@
 .intro-loader {
   --intro-ink: rgba(226, 221, 208, .78);
   --intro-paper: #121310;
-  --intro-crossfade-duration: 1200ms;
+  --intro-crossfade-duration: 7000ms;
   position: fixed;
   z-index: 100;
   inset: 0;

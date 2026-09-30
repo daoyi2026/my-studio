@@ -240,7 +240,7 @@ export class IntroLoader {
       completeHoldMs: 450,
       // Keep the visual hand-off soft, but do not leave a completed loader
       // sitting at 100% for the duration of the old seven-second fade.
-      crossfadeDurationMs: 1200,
+      crossfadeDurationMs: 7000,
       reducedMotionDurationMs: 500,
       visualCompletionGuardPercent: 1.5,
       // Keep the line and percentage tied to real host progress. A slow

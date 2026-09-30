@@ -9,7 +9,7 @@ import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=19";
-import { IntroLoader } from "../intro/IntroLoader.js?v=20";
+import { IntroLoader } from "../intro/IntroLoader.js?v=21";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
