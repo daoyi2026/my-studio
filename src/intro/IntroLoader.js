@@ -238,7 +238,9 @@ export class IntroLoader {
       lineArtUrl: "./public/assets/intro/test-line-art.svg",
       minimumIntroDurationMs: 0,
       completeHoldMs: 450,
-      crossfadeDurationMs: 7000,
+      // Keep the visual hand-off soft, but do not leave a completed loader
+      // sitting at 100% for the duration of the old seven-second fade.
+      crossfadeDurationMs: 1200,
       reducedMotionDurationMs: 500,
       comfortLeadPercent: 2.5,
       comfortStallCapPercent: 6,
@@ -280,6 +282,7 @@ export class IntroLoader {
 
     this.state = STATES.BOOT;
     this.progress = 0;
+    this.displayProgress = 0;
     this.lineProgress = 0;
     this.lastComfortTarget = 0;
     this.sceneReady = false;
@@ -395,18 +398,23 @@ export class IntroLoader {
   }
 
   renderProgress(status = null) {
-    // Before the scene is ready, the visible frontier follows the drawing;
-    // once the host scene is ready, the loader may finish and reveal even if
-    // the decorative SVG is still drawing its last contours. The line art is
-    // a visual cover for scene preparation, not a second scene-readiness gate.
-    // This keeps a slow SVG tail from consuming an unbounded final 1% after
-    // the model and renderer are already ready.
-    const completionReady = this.sceneReady;
-    // The number represents host work (model, textures, and renderer), not
-    // the decorative SVG's stroke-drawing speed. Keep the line animation
-    // visually independent so a slow SVG frame cannot manufacture a long
-    // 99% plateau or pull the percentage backward.
-    const visibleProgress = completionReady ? 100 : Math.min(99.4, this.progress);
+    // The host's real progress is the upper bound, while the line drawing is
+    // the visible pacing frontier. If the model and renderer finish quickly,
+    // the percentage now advances with the same 1-99 animation instead of
+    // jumping to 99 and waiting for a final hidden task. If the host is the
+    // slower side, it still controls the number and no progress is invented.
+    // Both gates must be ready before the cover is allowed to leave, so the
+    // renderer warm-up can run during the line-art window rather than after it.
+    const completionReady = this.sceneReady && this.lineArtReady;
+    const hostFrontier = Math.min(99.4, this.progress);
+    const lineFrontier = this.pathRecords.length
+      ? Math.min(99.4, this.lineProgress + this.options.comfortLeadPercent)
+      : hostFrontier;
+    const candidateProgress = Math.min(hostFrontier, lineFrontier);
+    const visibleProgress = completionReady
+      ? 100
+      : Math.max(this.displayProgress, candidateProgress);
+    this.displayProgress = visibleProgress;
     const roundedProgress = Math.round(visibleProgress);
     const slowSuffix = this.slowMode && this.root.classList.contains("is-slow-message")
       ? ` · ${this.options.slowStatus}`
@@ -510,6 +518,7 @@ export class IntroLoader {
     this.resolveAnimation = null;
     this.state = STATES.BOOT;
     this.progress = 0;
+    this.displayProgress = 0;
     this.lastComfortTarget = 0;
     this.progressSampleAt = performance.now();
     this.progressLastAdvancedAt = this.progressSampleAt;
@@ -986,9 +995,10 @@ export class IntroLoader {
     if (this.state === STATES.ERROR) return;
     this.sceneReady = true;
     this.warmupStatus = warmup;
-    this.setState(STATES.COMPLETING, "host-ready");
-    // The host scene owns readiness. The line art can continue as a visual
-    // cover until the reveal begins, but it must not hold the room at 99%.
+    this.setState(this.lineArtReady ? STATES.COMPLETING : STATES.WAITING, "host-ready");
+    // Keep the line-art gate explicit. The host renderer can finish first,
+    // but the cover must not turn into a static 100% frame while its drawing
+    // is still running; both tasks share the same visible 1-99 timeline.
     this.renderProgress();
     this.maybeComplete();
   }
@@ -1007,7 +1017,7 @@ export class IntroLoader {
   }
 
   maybeComplete() {
-    if (!this.revealRequested || !this.sceneReady) return;
+    if (!this.revealRequested || !this.sceneReady || !this.lineArtReady) return;
     if (this.completionPending || this.transitionStarted || this.state === STATES.ERROR || this.state === STATES.READY) return;
     clearTimeout(this.slowTimer);
     clearTimeout(this.slowMessageTimer);
@@ -1018,7 +1028,7 @@ export class IntroLoader {
     this.completionPending = true;
     this.completionTimer = setTimeout(() => {
       this.completionPending = false;
-      if (!this.sceneReady || this.state === STATES.ERROR) return;
+      if (!this.sceneReady || !this.lineArtReady || this.state === STATES.ERROR) return;
       this.completionTimer = setTimeout(() => this.beginTransition(), this.reducedMotion ? 0 : this.options.completeHoldMs);
     }, remaining);
   }

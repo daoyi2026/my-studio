@@ -9,13 +9,16 @@ import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=19";
-import { IntroLoader } from "../intro/IntroLoader.js?v=15";
+import { IntroLoader } from "../intro/IntroLoader.js?v=16";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
 
 const INTRO_LINE_ART_URL = "./public/assets/intro/room-line-art-native-grouped-v14-sketch-v5.svg?rev=production-clean-wall-v5";
-const STARTUP_WARMUP_BUDGET_MS = 2600;
+// Let the renderer use the same window as the line-art drawing. The budget is
+// still finite on unusually slow devices, but normal startup work is no longer
+// forced to spill into the first visible room frame after a short 2.6s cutoff.
+const STARTUP_WARMUP_BUDGET_MS = 5600;
 
 function viewportSize() {
   const viewport = window.visualViewport;
@@ -169,7 +172,7 @@ export class RoomApp {
       const stopWatchingReveal = this.loading.onStateChange(({ state }) => {
         if (state !== IntroLoader.STATES.TRANSITION) return;
         stopWatchingReveal();
-        // Use the long accepted crossfade as a quiet preload window. The
+        // Use the loader crossfade as a quiet preload window. The
         // embedded sketch pauses as soon as its runtime and canvas are ready,
         // so this adds no continuous hidden work and does not alter readiness.
         this.scheduleGalaxyPreload(this.loading.reducedMotion ? 0 : 2800);
@@ -926,6 +929,14 @@ export class RoomApp {
         for (let offset = 0; offset < visibleMeshes.length; offset += batchSize) {
           if (this.warmupCancelled) return "deferred-render";
           const batch = visibleMeshes.slice(offset, offset + batchSize);
+          const startRatio = Math.min(1, offset / Math.max(1, visibleMeshes.length));
+          report(93 + startRatio * 5.8, "REFINING RENDER STATE");
+          // Paint the progress frontier before entering the synchronous GPU
+          // draw. Without this yield a slow first pipeline compile leaves the
+          // cover showing the previous rounded value (usually 99%) for the
+          // whole batch, even though the work is already underway.
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          if (this.warmupCancelled) return "deferred-render";
           batch.forEach((mesh) => { mesh.visible = true; });
           // Render the batch directly. `compileAsync()` still deferred vertex
           // buffer upload and parts of the Metal pipeline until the first
@@ -934,7 +945,7 @@ export class RoomApp {
           this.renderer.render(this.scene, warmCamera);
           batch.forEach((mesh) => { mesh.visible = false; });
           const ratio = Math.min(1, (offset + batch.length) / visibleMeshes.length);
-          report(93 + ratio * 5, "REFINING RENDER STATE");
+          report(93 + ratio * 5.8, "REFINING RENDER STATE");
           await new Promise((resolve) => requestAnimationFrame(resolve));
           if (this.warmupCancelled) return "deferred-render";
         }

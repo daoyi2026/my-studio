@@ -1,7 +1,7 @@
 .intro-loader {
   --intro-ink: rgba(226, 221, 208, .78);
   --intro-paper: #121310;
-  --intro-crossfade-duration: 7000ms;
+  --intro-crossfade-duration: 1200ms;
   position: fixed;
   z-index: 100;
   inset: 0;
@@ -24,8 +24,8 @@
   pointer-events: none;
 }
 
-/* The line art crossfades over seven seconds; the progress copy is finished
-   at 100% and must leave immediately instead of lingering in that fade. */
+/* The progress copy is finished at 100% and must leave immediately instead of
+   lingering while the line art hands off to the room. */
 .intro-loader.is-revealing [data-intro-progress],
 .intro-loader.is-complete [data-intro-progress] {
   visibility: hidden;
