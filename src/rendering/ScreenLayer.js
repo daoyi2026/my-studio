@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CSS3DObject, CSS3DRenderer } from "three/addons/renderers/CSS3DRenderer.js";
-import { CONTENT } from "../config.js?v=8";
+import { CONTENT } from "../config.js?v=15";
 
 const CONTRACTS = {
   imac: { prefix: "IMAC", material: /^screen$/i, logicalWidth: 1440 },
