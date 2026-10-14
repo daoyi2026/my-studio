@@ -10,7 +10,7 @@ const CONTRACTS = {
 
 const PREVIEW_URLS = {
   imac: "./public/assets/screens/imac-home.png",
-  macbook: "./public/assets/screens/macbook-home.png",
+  macbook: "./public/assets/screens/macbook-dunhuang-sky.jpg",
   phone: "./public/assets/screens/phone-home.png",
 };
 
