@@ -10,12 +10,12 @@ const CONTRACTS = {
 
 const PREVIEW_URLS = {
   imac: "./public/assets/screens/imac-home.png",
-  macbook: "./public/assets/screens/macbook-github-profile.jpg",
+  macbook: "./public/assets/screens/macbook-github-profile-1440x930.jpg",
   phone: "./public/assets/screens/phone-home.png",
 };
 
 // GitHub blocks framing; this local preview links to the real profile.
-const EMBED_URLS = { macbook: "./public/content/github-profile.html" };
+const EMBED_URLS = { macbook: "./public/content/github-profile.html?v=2" };
 
 function materialsFor(object) {
   return Array.isArray(object.material) ? object.material : [object.material];
