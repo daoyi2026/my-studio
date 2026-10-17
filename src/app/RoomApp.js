@@ -1,14 +1,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=16";
+import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=17";
 import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=14";
 import { applyPhotos } from "../assets/applyPhotos.js?v=11";
 import { CameraDirector } from "../camera/CameraDirector.js?v=15";
-import { ScreenLayer } from "../rendering/ScreenLayer.js?v=17";
+import { ScreenLayer } from "../rendering/ScreenLayer.js?v=18";
 import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
-import { InteractionDirector } from "../interaction/InteractionDirector.js?v=21";
+import { InteractionDirector } from "../interaction/InteractionDirector.js?v=22";
 import { IntroLoader } from "../intro/IntroLoader.js?v=22";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
