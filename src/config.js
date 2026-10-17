@@ -3,7 +3,7 @@ export const MODEL_URL = "./public/model/myroom-studio-v1.glb?rev=6698b7fb";
 
 export const CONTENT = {
   imac: "https://rendaoyi.framer.ai/",
-  macbook: "https://daoyi2026.github.io/dunhuang-sky/",
+  macbook: "https://daoyi2026.github.io/her-dynasty/",
   phone: "https://bloom-blossom-garden.lovable.app",
   galaxy: "https://daoyi2026.github.io/Moonrise/",
 };

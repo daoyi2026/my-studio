@@ -1,14 +1,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=15";
+import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=16";
 import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=14";
 import { applyPhotos } from "../assets/applyPhotos.js?v=11";
 import { CameraDirector } from "../camera/CameraDirector.js?v=15";
-import { ScreenLayer } from "../rendering/ScreenLayer.js?v=16";
+import { ScreenLayer } from "../rendering/ScreenLayer.js?v=17";
 import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
-import { InteractionDirector } from "../interaction/InteractionDirector.js?v=20";
+import { InteractionDirector } from "../interaction/InteractionDirector.js?v=21";
 import { IntroLoader } from "../intro/IntroLoader.js?v=22";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
@@ -132,12 +132,8 @@ export class RoomApp {
       this.root.dataset.photoCount = String(this.photoReport.applied.length);
       if (this.photoReport.missing.length) this.root.dataset.photoMissing = this.photoReport.missing.join("|");
       this.configureScene();
-      // Compile the accepted lighting materials without generating every
-      // shadow map in the same visible 94% frame. The one-time shadow render
-      // is requested as the compositor begins fading the loader, so the final
-      // room still opens with the full approved light treatment.
-      this.renderer.shadowMap.autoUpdate = false;
-      this.renderer.shadowMap.needsUpdate = false;
+      // Prepare the complete first frame, including the accepted shadows,
+      // while the cover is opaque. Readiness must follow a real room draw.
       this.loading.updateLoadProgress(92, "PREPARING SCENE");
       this.warmupCancelled = false;
       const warmupStatus = await this.warmFrames(({ progress, status }) => this.loading.updateLoadProgress(progress, status));
@@ -146,8 +142,8 @@ export class RoomApp {
       // then reveals daytime once; the explicit mode toggle retains its own
       // repeatable behavior and is excluded below.
       this.firstOrdinaryClickPending = true;
-      // The warm-up gate is already complete. Open it before the first live
-      // render so the state machine never says 100% while the scene is unready.
+      // The full initial draw is now complete. Keep the ordinary animation
+      // clock paused until the same transition frame as before.
       this.loading.markSceneReady({ warmup: warmupStatus });
       const stopWatchingReveal = this.loading.onStateChange(({ state }) => {
         if (state !== IntroLoader.STATES.TRANSITION) return;
@@ -156,17 +152,9 @@ export class RoomApp {
         // embedded sketch pauses as soon as its runtime and canvas are ready,
         // so this adds no continuous hidden work and does not alter readiness.
         this.scheduleGalaxyPreload(this.loading.reducedMotion ? 0 : 2800);
-        // Let the opacity transition enter the compositor before paying the
-        // first shadow-map cost on the following frame. Restore the renderer's
-        // normal continuous shadow updates immediately afterwards so moving
-        // objects and every accepted day/night or lamp effect remain intact.
+        // Preserve the first animated frame and its native elapsed-zero state.
         requestAnimationFrame(() => {
-          // Start the ordinary render loop only after the cover has entered
-          // its fade. Any remaining driver upload is then hidden by the same
-          // transition instead of blocking the 99% loader frame.
           this.animate();
-          this.renderer.shadowMap.needsUpdate = true;
-          this.renderer.shadowMap.autoUpdate = true;
         });
       });
       await this.loading.revealWhenReady();
@@ -889,14 +877,102 @@ export class RoomApp {
 
   async warmFrames(onProgress = null) {
     const report = (progress, status) => onProgress?.({ progress, status });
-    report(93, "PREPARING SCENE");
-    report(96, "REFINING RENDER STATE");
-    report(99.4, "FINAL CHECK");
-    // Do not make the readiness gate depend on requestAnimationFrame. A tab
-    // can be backgrounded or temporarily compositor-starved while the line
-    // art continues to exist, and an rAF-only gate would strand the loader at
-    // its final visible percentage indefinitely.
-    return "deferred-render";
+    // Message tasks yield without depending on rAF or background timer rates.
+    const yieldTask = () => new Promise((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => {
+        channel.port1.close();
+        channel.port2.close();
+        resolve();
+      };
+      channel.port2.postMessage(null);
+    });
+    const shadowState = {
+      autoUpdate: this.renderer.shadowMap.autoUpdate,
+      needsUpdate: this.renderer.shadowMap.needsUpdate,
+    };
+    const renderTarget = this.renderer.getRenderTarget();
+    const cubeFace = this.renderer.getActiveCubeFace();
+    const mipLevel = this.renderer.getActiveMipmapLevel();
+
+    try {
+      report(93, "PREPARING SCENE");
+      // The preview loaders replace and dispose their temporary canvas maps.
+      // Settle them before collecting textures so no stale map is uploaded.
+      await this.screens.waitForPreviews();
+      let compiled = false;
+      if (typeof this.renderer.compileAsync === "function") {
+        try {
+          // Three.js compile traverses all materials even in hidden batches.
+          // One complete pass avoids recompiling the same scene repeatedly.
+          await this.renderer.compileAsync(this.scene, this.camera);
+          compiled = true;
+        } catch {
+          // A complete render below remains the compatibility/readiness gate.
+        }
+      }
+
+      report(96, "REFINING RENDER STATE");
+      const textures = new Set();
+      const addTexture = (texture) => {
+        if (texture?.isTexture && !texture.isRenderTargetTexture) textures.add(texture);
+      };
+      addTexture(this.scene.background);
+      addTexture(this.scene.environment);
+      this.scene.traverseVisible((object) => {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.filter((material) => material?.visible !== false && material).forEach((material) => {
+          Object.values(material).forEach(addTexture);
+        });
+        if (object.isLight) addTexture(object.map);
+      });
+      let uploaded = 0;
+      let sliceStartedAt = performance.now();
+      for (const texture of textures) {
+        this.renderer.initTexture(texture);
+        uploaded += 1;
+        if (performance.now() - sliceStartedAt >= 6) {
+          report(96 + uploaded / textures.size * 2.4, "REFINING RENDER STATE");
+          await yieldTask();
+          sliceStartedAt = performance.now();
+        }
+      }
+
+      report(99.4, "FINAL CHECK");
+      await yieldTask();
+      this.renderer.shadowMap.autoUpdate = true;
+      this.renderer.shadowMap.needsUpdate = true;
+      this.renderer.render(this.scene, this.camera);
+      this.screens.render(true);
+
+      // Wait asynchronously for this full draw to reach the GPU. A timer poll
+      // also completes when a background tab is not receiving animation frames.
+      const gl = this.renderer.getContext();
+      if (typeof gl.fenceSync === "function") {
+        const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        if (!fence) throw new Error("The initial room frame could not be prepared.");
+        try {
+          gl.flush();
+          await new Promise((resolve, reject) => {
+            const check = () => {
+              const status = gl.clientWaitSync(fence, 0, 0);
+              if (status === gl.WAIT_FAILED) reject(new Error("The initial room frame could not finish."));
+              else if (status === gl.TIMEOUT_EXPIRED) setTimeout(check, 8);
+              else resolve();
+            };
+            check();
+          });
+        } finally {
+          gl.deleteSync(fence);
+        }
+      }
+      await yieldTask();
+      return compiled ? "compileAsync+textures+render" : "textures+render";
+    } finally {
+      this.renderer.shadowMap.autoUpdate = shadowState.autoUpdate;
+      this.renderer.shadowMap.needsUpdate = shadowState.needsUpdate;
+      this.renderer.setRenderTarget(renderTarget, cubeFace, mipLevel);
+    }
   }
 
   updateMotion(elapsed) {

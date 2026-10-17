@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CSS3DObject, CSS3DRenderer } from "three/addons/renderers/CSS3DRenderer.js";
-import { CONTENT } from "../config.js?v=15";
+import { CONTENT } from "../config.js?v=16";
 
 const CONTRACTS = {
   imac: { prefix: "IMAC", material: /^screen$/i, logicalWidth: 1440 },
@@ -10,7 +10,7 @@ const CONTRACTS = {
 
 const PREVIEW_URLS = {
   imac: "./public/assets/screens/imac-home.png",
-  macbook: "./public/assets/screens/macbook-dunhuang-sky.jpg",
+  macbook: "./public/assets/screens/macbook-her-dynasty.jpg",
   phone: "./public/assets/screens/phone-home.png",
 };
 
@@ -247,12 +247,15 @@ export class ScreenLayer extends EventTarget {
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    new THREE.TextureLoader().load(PREVIEW_URLS[kind], (texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = Math.min(4, this.webglScene.userData.maxAnisotropy || 4);
-      fallbackMaterial.map?.dispose();
-      fallbackMaterial.map = texture;
-      fallbackMaterial.needsUpdate = true;
+    const previewReady = new Promise((resolve) => {
+      new THREE.TextureLoader().load(PREVIEW_URLS[kind], (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = Math.min(4, this.webglScene.userData.maxAnisotropy || 4);
+        fallbackMaterial.map?.dispose();
+        fallbackMaterial.map = texture;
+        fallbackMaterial.needsUpdate = true;
+        resolve();
+      }, undefined, () => resolve());
     });
     const fallback = plane(frame.width * 1.004, frame.height * 1.004, fallbackMaterial, frame, .0008, `WEB_SCREEN_TRANSITION_${kind.toUpperCase()}`);
     // Keep a local, GPU-cheap image on the physical screen while its page is
@@ -263,7 +266,7 @@ export class ScreenLayer extends EventTarget {
     this.webglScene.add(fallback);
     this.screens[kind] = {
       kind, mesh, localBox: null, frame, element, object, iframe, fallback, url,
-      logicalWidth, logicalHeight, iframeStartedAt: null, iframeLoadedAt: null,
+      logicalWidth, logicalHeight, previewReady, iframeStartedAt: null, iframeLoadedAt: null,
       loadDuration: null, contentStarted: false, contentReady: false,
     };
     element.style.visibility = "hidden";
@@ -278,6 +281,10 @@ export class ScreenLayer extends EventTarget {
       if (this.pendingInteractiveKind === kind) this.setInteractive(kind);
     });
     this.cameraState = null;
+  }
+
+  waitForPreviews() {
+    return Promise.all(Object.values(this.screens).map((screen) => screen.previewReady));
   }
 
   startContent(kind) {

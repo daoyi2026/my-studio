@@ -4,7 +4,7 @@ import { BOOK_INDEX_BY_MODEL_ID } from "../content/roomContent.js";
 
 export const RULES = [
   { id: "imac", label: "iMac · 个人官网", pattern: /AGREED_iMac/i, region: "desk", screen: "imac" },
-  { id: "macbook", label: "MacBook · 敦煌星图", pattern: /AGREED_MacBook/i, region: "desk", screen: "macbook" },
+  { id: "macbook", label: "MacBook · 她的千年", pattern: /AGREED_MacBook/i, region: "desk", screen: "macbook" },
   { id: "phone", label: "手机 · App 体验", pattern: /REPL-v63-phone/i, anchor: "REPL-v63-phone-001", region: "desk", screen: "phone" },
   { id: "window", label: "窗户 · 数字银河", pattern: /ARCH_Window/i, anchor: "ARCH_WindowGlass", region: "drawing", portal: true },
   { id: "telescope", label: "望远镜 · 数字银河", pattern: /REPL-v63-telescope/i, anchor: "REPL-v63-telescope-Group", region: "drawing", portal: true },
