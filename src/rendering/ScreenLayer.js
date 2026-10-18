@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CSS3DObject, CSS3DRenderer } from "three/addons/renderers/CSS3DRenderer.js";
-import { CONTENT } from "../config.js?v=17";
+import { CONTENT } from "../config.js?v=18";
 
 const CONTRACTS = {
   imac: { prefix: "IMAC", material: /^screen$/i, logicalWidth: 1440 },
@@ -10,12 +10,9 @@ const CONTRACTS = {
 
 const PREVIEW_URLS = {
   imac: "./public/assets/screens/imac-home.png",
-  macbook: "./public/assets/screens/macbook-github-profile-1440x930.jpg",
+  macbook: "./public/assets/screens/macbook-github-pages-1440x930.jpg",
   phone: "./public/assets/screens/phone-home.png",
 };
-
-// GitHub blocks framing; this local preview links to the real profile.
-const EMBED_URLS = { macbook: "./public/content/github-profile.html?v=2" };
 
 function materialsFor(object) {
   return Array.isArray(object.material) ? object.material : [object.material];
@@ -177,7 +174,7 @@ export class ScreenLayer extends EventTarget {
       }
       applyDisplayCutout(displayMesh, contract.material);
       this.addDepthContract(kind, frame, contract);
-      this.attach(kind, displayMesh, frame, EMBED_URLS[kind] || CONTENT[kind], contract);
+      this.attach(kind, displayMesh, frame, CONTENT[kind], contract);
     }
     return this.screens;
   }
