@@ -320,10 +320,10 @@ export class ScreenLayer extends EventTarget {
       const mobileInteractive = this.mobileCompositing
         && !this.sceneMoving
         && this.overlayKind === screen.kind;
-      // The preview texture is a current, pixel-matched capture of the live
-      // page. Use it while any camera is moving so neither desktop nor mobile
-      // needs to recomposite transformed iframe trees on every frame.
-      const motionFallback = this.sceneMoving;
+      // Keep desktop pages live during motion to avoid swapping their text
+      // and graphics for a static preview. Mobile retains its preview policy.
+      const desktopPage = screen.kind === "imac" || screen.kind === "macbook";
+      const motionFallback = this.sceneMoving && !desktopPage;
       const focusedPhoneFallback = screen.kind === this.transitionKind && screen.kind === "phone";
       const useFallback = this.mobileCompositing
         ? !mobileInteractive
@@ -462,9 +462,11 @@ export class ScreenLayer extends EventTarget {
 
   render(force = false) {
     if (this.overlayKind) return false;
-    // The matching local screen previews are already visible during motion,
-    // so the CSS3D scene can wait for the camera to settle and render once.
-    if (this.sceneMoving && !force) {
+    // Loaded desktop pages need current camera transforms during motion.
+    // Preview-only and mobile views can still skip this CSS3D work.
+    const liveDesktopPage = !this.mobileCompositing
+      && (this.screens.imac?.contentReady || this.screens.macbook?.contentReady);
+    if (this.sceneMoving && !force && !liveDesktopPage) {
       this.skippedFrames += 1;
       return false;
     }
