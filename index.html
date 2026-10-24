@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://bloom-blossom-garden.lovable.app" crossorigin />
   <link rel="dns-prefetch" href="//bloom-blossom-garden.lovable.app" />
   <link rel="preload" href="./public/assets/intro/room-line-art-native-grouped-v14-sketch-v5.svg?rev=production-clean-wall-v5" as="fetch" type="image/svg+xml" crossorigin="anonymous" />
-  <link rel="stylesheet" href="./src/styles.css?v=29" />
+  <link rel="stylesheet" href="./src/styles.css?v=36" />
   <link rel="stylesheet" href="./src/intro/intro-loader.css?v=8" />
   <script type="importmap">
     {
@@ -30,6 +30,7 @@
         <span class="brand-mark">R</span>
         <span><strong>DAOYI’s ROOM</strong><em>SUMMER 2026</em></span>
       </a>
+      <a class="contact-email" href="mailto:rendaoyi@outlook.com">rendaoyi@outlook.com</a>
       <nav>
         <button id="mode-toggle" class="pill" type="button" data-action="day" aria-label="Switch to day mode" title="Switch to day mode"><svg class="mode-icon mode-icon-sun" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="5"/><path d="M16 3v4M16 25v4M3 16h4M25 16h4M6.8 6.8l2.8 2.8M22.4 22.4l2.8 2.8M25.2 6.8l-2.8 2.8M9.6 22.4l-2.8 2.8"/></svg><svg class="mode-icon mode-icon-moon" viewBox="0 0 32 32" aria-hidden="true"><path d="M24.5 21.6A10.5 10.5 0 0 1 10.4 7.5 10.5 10.5 0 1 0 24.5 21.6Z"/></svg></button>
         <button id="reset-view" class="icon-button" type="button" aria-label="Return to global view" title="Return to global view"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 15 16 5l11 10M8 14v13h16V14M13 27v-7h6v7"/></svg></button>
@@ -41,6 +42,13 @@
       <button class="panel-close" type="button" aria-label="Close panel">⋯</button>
       <div class="panel-content"></div>
     </section>
+
+    <nav id="artwork-controls" class="artwork-controls" aria-label="Artwork pages" hidden>
+      <button type="button" data-artwork-step="-1" aria-label="Previous artwork" title="Previous page"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m20 8-8 8 8 8" /></svg></button>
+      <output id="artwork-page-count" aria-label="Current artwork page" aria-live="polite">— / 27</output>
+      <button type="button" data-artwork-step="1" aria-label="Next artwork" title="Next page"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m12 8 8 8-8 8" /></svg></button>
+      <p id="artwork-page-status" class="artwork-page-status" role="status" hidden></p>
+    </nav>
 
     <section id="loader" class="intro-loader" aria-label="Organizing room" aria-live="polite" aria-busy="true">
       <div data-intro-line-art aria-hidden="true"></div>
@@ -67,6 +75,6 @@
 
     <div id="cursor" class="cursor" aria-hidden="true"></div>
   </div>
-  <script type="module" src="./src/main.js?v=99"></script>
+  <script type="module" src="./src/main.js?v=122"></script>
 </body>
 </html>

@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
 
 permissions:
   contents: read
@@ -26,6 +28,8 @@ jobs:
         with:
           node-version: 22
       - run: npm run check
+      - name: Refresh the public Substack snapshot
+        run: python3 tools/sync-substack.py
       - uses: actions/configure-pages@v5
       - name: Prepare static site
         run: |

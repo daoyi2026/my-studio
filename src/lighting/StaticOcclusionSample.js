@@ -1,8 +1,8 @@
 import * as THREE from "three";
 
 const BASE = "./public/assets/lighting/r7/";
-const SOURCE_SHA = "6be02ce29010409f2aeb0b442ffa4393beab34ddfd8717609a6455917d09d178";
-const PRODUCTION_MODEL_SHA = "6698b7fba6c7f7c51e8ab198ef54242083b603f930dc5eeb4ffa417d01e33de2";
+const SOURCE_SHA = "4ce10f1bb16cfe7fe89f90e25c171635f3392e2801e49fcbd6911f3a5baaf547";
+const PRODUCTION_MODEL_SHA = "4ce10f1bb16cfe7fe89f90e25c171635f3392e2801e49fcbd6911f3a5baaf547";
 
 async function sha256(bytes) {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -24,7 +24,7 @@ function requireContract(condition, message) {
 export async function applyStaticOcclusionSample(room, modelUrl) {
   try {
     const manifest = await (await checkedFetch(`${BASE}manifest.json`)).json();
-    requireContract(manifest.version === "r7-ao-v3-r13" && manifest.sourceSha256 === SOURCE_SHA, "manifest identity");
+    requireContract(manifest.version === "r7-ao-desk-vintage-v01" && manifest.sourceSha256 === SOURCE_SHA, "manifest identity");
     requireContract(await sha256(await (await checkedFetch(modelUrl)).arrayBuffer()) === PRODUCTION_MODEL_SHA, "production GLB SHA-256");
     requireContract(manifest.receivers.length === 10 && new Set(manifest.receivers.map((r) => r.name)).size === 10, "receiver set");
     room.updateMatrixWorld(true);

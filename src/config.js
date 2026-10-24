@@ -1,5 +1,5 @@
-// Public release v1: the user-accepted R13 model is the production default.
-export const MODEL_URL = "./public/model/myroom-studio-v1.glb?rev=6698b7fb";
+// Public release: the user-accepted Vintage desk model is the default.
+export const MODEL_URL = "./public/model/myroom-studio-v1.glb?rev=4ce10f1b";
 
 export const CONTENT = {
   imac: "https://rendaoyi.framer.ai/",

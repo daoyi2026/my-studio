@@ -1,3 +1,8 @@
+export const ROOM_LINKS = {
+  writing: { label: "Writing", title: "Substack", account: "@daoooyi", url: "https://substack.com/@daoooyi" },
+  podcast: null,
+};
+
 export const PLAYLIST = [
   { title: "奇迹の山 / Miracle Mountain", artist: "Masaaki Kishibe", duration: 270, audioUrl: "./public/assets/audio/miracle-mountain.m4a" },
   { title: "Piece Of Art", artist: "Kryder", duration: 242, audioUrl: "./public/assets/audio/piece-of-art.mp3" },

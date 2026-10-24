@@ -1,10 +1,10 @@
 {
-  "version": "r7-ao-v3-r13",
+  "version": "r7-ao-desk-vintage-v01",
   "technique": "Exact GLB world-space BVH, deterministic cosine-weighted hemisphere, distance-weighted static AO; not GI or direct lighting",
-  "sourceSha256": "6be02ce29010409f2aeb0b442ffa4393beab34ddfd8717609a6455917d09d178",
+  "sourceSha256": "4ce10f1bb16cfe7fe89f90e25c171635f3392e2801e49fcbd6911f3a5baaf547",
   "texture": "atlas.png",
-  "textureSha256": "5283ef5892e8289181194d88864f63f04d7af2430f82cd32dad9373ffc542aaa",
-  "textureBytes": 145223,
+  "textureSha256": "8930c236593ac5583188f0c224ffda25c15935d4c065bb7d9d758bf1beedd138",
+  "textureBytes": 146478,
   "width": 2048,
   "height": 1024,
   "samples": 64,
@@ -18,8 +18,8 @@
     0.0,
     1.0
   ],
-  "mean": 0.6467027233649785,
-  "occluderTriangles": 1479905,
+  "mean": 0.6463691326926079,
+  "occluderTriangles": 1739681,
   "occluderNodes": [
     "ARCH_BackWall",
     "ARCH_Floor",
@@ -65,6 +65,16 @@
     "Cylinder.015",
     "Cylinder.016",
     "Edge banding",
+    "GEO-DESKREVIEW-microphone-Vintage_Base",
+    "GEO-DESKREVIEW-microphone-Vintage_Buttom",
+    "GEO-DESKREVIEW-microphone-Vintage_Filter",
+    "GEO-DESKREVIEW-microphone-Vintage_Handle",
+    "GEO-DESKREVIEW-microphone-Vintage_Hoop",
+    "GEO-DESKREVIEW-microphone-Vintage_Ring",
+    "GEO-DESKREVIEW-microphone-Vintage_Screen",
+    "GEO-DESKREVIEW-microphone-Vintage_Screw",
+    "GEO-DESKREVIEW-microphone-Vintage_Screw_2",
+    "GEO-DESKREVIEW-microphone-Vintage_Screw_3",
     "GEO-DisplayAsset_01_Mesh",
     "GEO-DisplayAsset_09_Mesh",
     "GEO-v44-StorageBox_Body",
@@ -480,6 +490,7 @@
     "AGREED_MacBook_laptop14_body.001",
     "AGREED_MacBook_laptop14_screen.001",
     "AGREED_iMac_Cube.001",
+    "AGREED_iMac_Cube.003",
     "AGREED_iMac_Cylinder",
     "AGREED_iMac_Cylinder.001",
     "AGREED_iMac_Cylinder.002",
@@ -515,6 +526,9 @@
     "Cube.002",
     "Cylinder.017",
     "Cylinder.018",
+    "GEO-DESKREVIEW-keyboard-Bottom",
+    "GEO-DESKREVIEW-laptop-Keyboard",
+    "GEO-DESKREVIEW-laptop-Screen_Frame",
     "GEO-v58-Notebook_Cover",
     "GEO-v58-Notebook_Gutter",
     "GEO-v58-Notebook_LeftPageBlock",
@@ -4199,7 +4213,7 @@
       ]
     }
   ],
-  "durationSeconds": 48.792,
+  "durationSeconds": 149.567,
   "mapping": "Receiver name + normalized float32 positions SHA + uint32 indices SHA + world matrix; non-indexed uv1 in original triangle order",
   "limitations": [
     "Static finite-distance AO only; no full-room or day/night indirect lightmap",
@@ -4217,5 +4231,10 @@
     "inPlaneBiasMeters": 0.002,
     "cause": "Normal-only origin bias left boundary samples on adjacent wall; near-zero ray hits were numerically unstable",
     "preserved": "All geometry, UV mapping, lights and other chart texels"
+  },
+  "staticOccluderIncludeException": {
+    "nodePrefix": "GEO-DESKREVIEW-microphone-",
+    "reason": "Static accepted desk microphone; legacy phone substring exclusion would otherwise omit its opaque geometry.",
+    "defaultExclusionsUnchanged": true
   }
 }

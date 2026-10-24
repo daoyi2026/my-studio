@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { objectPath } from "../assets/loadRoom.js";
-import { BOOK_INDEX_BY_MODEL_ID } from "../content/roomContent.js";
+import { objectPath } from "../assets/loadRoom.js?v=16";
+import { BOOK_INDEX_BY_MODEL_ID } from "../content/roomContent.js?v=6";
 
 export const RULES = [
   { id: "imac", label: "iMac · 个人官网", pattern: /AGREED_iMac/i, region: "desk", screen: "imac" },
@@ -16,7 +16,8 @@ export const RULES = [
   { id: "trophy", label: "Trophy · Awards", pattern: /GEO-v62-Trophy|REPL-v64-trophy/i, anchor: "GEO-v62-Trophy-SportCup_Anchor", region: "shelf", panel: "trophy" },
   { id: "drawing", label: "画板 · 绘画作品", pattern: /DraftingBoard|drawing-desk/i, anchor: "GEO-v62-DraftingBoard-Paper_Placeholder", region: "drawing", panel: "drawing" },
   { id: "felt", label: "毛毡板 · 留言", pattern: /WallDisplay_FeltBoard/i, anchor: "GEO-v57-WallDisplay_FeltBoard", region: "desk", panel: "felt" },
-  { id: "notebook", label: "本子 · Brainstorming", pattern: /GEO-v58-Notebook/i, anchor: "GEO-v58-Notebook_Cover", region: "desk", panel: "notebook" },
+  { id: "notebook", label: "本子 · Room notes", pattern: /GEO-v58-Notebook/i, anchor: "GEO-v58-Notebook_Cover", region: "desk", panel: "notebook" },
+  { id: "writing", label: "Typewriter · Writing", pattern: /REPL-v63-typewriter-/i, anchor: "REPL-v63-typewriter-Group", region: "desk", panel: "writing" },
   { id: "book", label: "Bookshelf", pattern: /Books-Layer/i, region: "shelf", panel: "book" },
 ];
 
@@ -82,8 +83,9 @@ export class InteractionDirector {
     this.regionPose = null;
     this.pointerDown = null;
     this.drawingLampVisuals = [];
+    this.drawingLampTween = null;
     cameraDirector.addEventListener("viewchange", (event) => {
-      if (event.detail.level !== "interaction" || event.detail.region !== "drawing") this.setDrawingLampOcclusion(false);
+      this.setDrawingLampOcclusion(false);
       if (event.detail.level !== "interaction") {
         this.activeRule = null;
         this.resetBookMotion();
@@ -170,23 +172,41 @@ export class InteractionDirector {
     }
     if (this.cameraDirector.level === "interaction") {
       if (this.activeRule?.id === "drawing" && rule?.id === "drawing") {
-        return this.activate(rule);
+        return this.activate({ ...rule, artworkStep: this.artworkStep(hit, event) });
       }
       if (this.activeRule?.id === rule?.id) return this.activate(rule);
       const path = objectPath(hit.object);
       if (this.activeRule?.id === "felt" && isFeltSurface(path)) return this.activate(this.activeRule);
-      if (this.activeRule?.id === "drawing" && /DraftingBoard|drawing-desk/i.test(path)) return this.activate(this.activeRule);
+      if (this.activeRule?.id === "drawing" && /DraftingBoard|drawing-desk/i.test(path)) return this.activate({ ...this.activeRule, artworkStep: this.artworkStep(hit, event) });
       if (this.activeRule?.id === "notebook" && /Notebook/i.test(path)) return this.activate(this.activeRule);
       this.handleBlank();
     }
+  }
+
+  artworkStep(hit, event) {
+    const paper = this.room.getObjectByName("GEO-v62-DraftingBoard-Paper_Placeholder");
+    if (!paper) return 1;
+    // The entire printed image wins, including its own white margins.
+    let object = hit.object;
+    while (object) {
+      if (object === paper) return 1;
+      object = object.parent;
+    }
+    const center = new THREE.Box3().setFromObject(paper).getCenter(new THREE.Vector3()).project(this.camera);
+    const rect = this.canvas.getBoundingClientRect();
+    const centerX = rect.left + (center.x * .5 + .5) * rect.width;
+    return event.clientX < centerX ? -1 : 1;
   }
 
   handleBlank() {
     if (this.cameraDirector.level === "interaction") {
       this.setDrawingLampOcclusion(false);
       this.cameraDirector.exitInteraction(this.regionPose, this.activeRule?.id === "ukulele" ? 550 : 950);
-      this.activeRule = null;
-      this.onPanel?.(null);
+      // Successful transitions already clear interaction state through viewchange.
+      if (this.cameraDirector.level === "interaction") {
+        this.activeRule = null;
+        this.onPanel?.(null);
+      }
     }
   }
 
@@ -216,6 +236,7 @@ export class InteractionDirector {
   }
 
   setDrawingLampOcclusion(hidden) {
+    if (!hidden) this.drawingLampTween = null;
     if (!this.drawingLampVisuals.length) {
       const drawingDesk = this.room.getObjectByName("REPL-v63-drawing-desk-Group");
       // The imported articulated lamp is split into sibling nodes. `lamp_180`
@@ -229,6 +250,23 @@ export class InteractionDirector {
       });
     }
     this.drawingLampVisuals.forEach(({ object, visible }) => { object.visible = hidden ? false : visible; });
+  }
+
+  updateDrawingLampOcclusion(now = performance.now()) {
+    const pending = this.drawingLampTween;
+    if (!pending) return;
+    const current = this.cameraDirector.projectionTween || this.cameraDirector.tween;
+    if (this.activeRule?.id !== "drawing" || this.cameraDirector.level !== "interaction"
+      || this.cameraDirector.region !== "drawing" || (current && current !== pending)) {
+      this.setDrawingLampOcclusion(false);
+      return;
+    }
+    // Follow the actual approach, including a delayed final frame. Keep the
+    // lamp present until the camera has covered most of the eased path.
+    if (!current || now >= pending.start + pending.duration * .65) {
+      this.drawingLampTween = null;
+      this.setDrawingLampOcclusion(true);
+    }
   }
 
   inferRegion(object, rule) {
@@ -352,18 +390,63 @@ export class InteractionDirector {
       return;
     }
     if (rule.id === "drawing") {
-      this.setDrawingLampOcclusion(true);
-      return this.cameraDirector.goDrawingBoard(object, this.room.getObjectByName("ARCH_WindowGlass"), rule.label);
+      this.setDrawingLampOcclusion(false);
+      const result = this.cameraDirector.goDrawingBoard(object, this.room.getObjectByName("ARCH_WindowGlass"), rule.label);
+      if (this.cameraDirector.level === "interaction" && this.cameraDirector.region === "drawing") {
+        this.drawingLampTween = this.cameraDirector.projectionTween || this.cameraDirector.tween;
+      }
+      return result;
     }
     if (rule.id === "felt") {
       this.cameraDirector.goObject(object, rule.label);
       return this.activate(rule);
     }
+    if (rule.id === "writing") {
+      if (this.cameraDirector.goObject(object, rule.label)) this.activate(rule);
+      return;
+    }
     const ukuleleBox = rule.id === "ukulele" ? this.replacementGroupBox(object) : null;
     const options = rule.id === "ukulele" ? this.ukuleleCloseOptions(ukuleleBox)
-      : rule.id === "notebook" || rule.id === "drawing" ? { normal: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0,0,-1), fill: .9 }
+      : rule.id === "notebook" ? this.notebookCloseOptions()
+        : rule.id === "drawing" ? { normal: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0,0,-1), fill: .9 }
         : {};
     this.cameraDirector.goObject(object, rule.label, options);
+  }
+
+  notebookCloseOptions() {
+    const normal = new THREE.Vector3(0, 1, 0);
+    const fallback = { normal, up: new THREE.Vector3(0, 0, -1), fill: .9 };
+    const pages = ["Left", "Right"].map(side => this.room.getObjectByName(`GEO-v58-Notebook_${side}PageSurface`));
+    if (pages.some(page => !page?.geometry?.attributes?.uv || !page.geometry.attributes.position)) return fallback;
+    const left = pages[0], { position, uv } = left.geometry.attributes;
+    left.updateWorldMatrix(true, false);
+    let largestUVArea = 0, up = null;
+    // The left page's image top is UV v=0. Derive its reading axis from the
+    // largest UV triangle, independently of the physical notebook rotation.
+    for (let i = 0, count = left.geometry.index?.count ?? position.count; i < count; i += 3) {
+      const indices = [0, 1, 2].map(offset => left.geometry.index?.getX(i + offset) ?? i + offset);
+      const [a, b, c] = indices.map(index => new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(left.matrixWorld));
+      const [ta, tb, tc] = indices.map(index => new THREE.Vector2().fromBufferAttribute(uv, index));
+      const du1 = tb.x - ta.x, dv1 = tb.y - ta.y, du2 = tc.x - ta.x, dv2 = tc.y - ta.y;
+      const determinant = du1 * dv2 - du2 * dv1;
+      if (Math.abs(determinant) <= largestUVArea) continue;
+      largestUVArea = Math.abs(determinant);
+      up = c.sub(a).multiplyScalar(du1).sub(b.sub(a).multiplyScalar(du2)).multiplyScalar(-1 / determinant).projectOnPlane(normal).normalize();
+    }
+    if (!up || up.lengthSq() < .5) return fallback;
+    const right = new THREE.Vector3().crossVectors(up, normal).normalize();
+    const bounds = new THREE.Box3();
+    for (const page of pages) {
+      page.updateWorldMatrix(true, false);
+      const positions = page.geometry.attributes.position;
+      for (let i = 0; i < positions.count; i += 1) {
+        const point = new THREE.Vector3().fromBufferAttribute(positions, i).applyMatrix4(page.matrixWorld);
+        bounds.expandByPoint(new THREE.Vector3(point.dot(right), point.dot(up), point.dot(normal)));
+      }
+    }
+    const middle = bounds.getCenter(new THREE.Vector3()), size = bounds.getSize(new THREE.Vector3());
+    const center = right.clone().multiplyScalar(middle.x).addScaledVector(up, middle.y).addScaledVector(normal, middle.z);
+    return { normal, up, fill: .9, frame: { center, width: size.x, height: size.y, depth: size.z } };
   }
 
   replacementGroupBox(object) {
@@ -406,6 +489,7 @@ export class InteractionDirector {
   }
 
   update() {
+    this.updateDrawingLampOcclusion();
     this.room.traverse((object) => {
       if (object.userData.hoverTarget == null) return;
       object.position.y += (object.userData.hoverTarget - object.position.y) * .14;

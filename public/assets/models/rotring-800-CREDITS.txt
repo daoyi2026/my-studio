@@ -1,0 +1,11 @@
+rOtring 800+ 0.5mm
+Author: Kaan (swagmasterkaan)
+License: CC BY (Creative Commons Attribution), as listed by the source.
+Source: https://sketchfab.com/3d-models/low-poly-rtring-800-05mm-5afe3321b548487a9cd01646d147a336
+Author profile: https://sketchfab.com/swagmasterkaan
+
+Changes for this room: uniform normalization of units, axis/origin fitting,
+and promotion of the author's active EEVEE Principled material output to ALL
+for glTF compatibility. Original geometry, all 463 triangles, five materials,
+and the author-supplied black/gold/red palette are retained.
+The user-supplied source ZIP and .blend are unchanged.

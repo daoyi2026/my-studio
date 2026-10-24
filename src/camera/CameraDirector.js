@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CAMERA } from "../config.js?v=8";
+import { CAMERA } from "../config.js?v=20";
 import { fitDistance, frameExtents, poseForBox, surfaceFrame } from "../utils/geometry.js";
 
 const ease = (t) => t * t * t * (t * (t * 6 - 15) + 10);
@@ -204,6 +204,12 @@ export class CameraDirector extends EventTarget {
     const normal = options.normal?.clone() || this.camera.position.clone().sub(center).setY(options.keepElevation ? this.camera.position.y - center.y : 0).normalize();
     if (normal.lengthSq() < .001) normal.set(0, 0, 1);
     const pose = poseForBox(this.perspectiveCamera, box, normal, options.fov ?? CAMERA.interactionFov, options.fill ?? CAMERA.interactionFill, label, options.up || new THREE.Vector3(0,1,0));
+    if (options.frame) {
+      const { center, width, height, depth } = options.frame;
+      const distance = fitDistance(this.perspectiveCamera, width, height, depth, pose.fov, options.fill ?? CAMERA.interactionFill);
+      pose.target.copy(center);
+      pose.position.copy(center).addScaledVector(normal, distance);
+    }
     pose.near = Math.max(this.focusNear, Math.min(this.globalNear, pose.position.distanceTo(pose.target) / 100));
     pose.projection = "perspective";
     const transitioned = this.transition(pose, { level: "interaction", region: this.region, duration: options.duration ?? 1050 });
@@ -252,7 +258,7 @@ export class CameraDirector extends EventTarget {
       position: target.clone().addScaledVector(viewNormal, Math.max(distance, this.focusNear * 4)),
       target,
       // Keep the direct focus normal to the paper and preserve the accepted R3
-      // clockwise orientation. The lamp parts are hidden before this tween.
+      // clockwise orientation. Lamp occlusion follows the approach separately.
       up: frame?.right?.clone().negate() || new THREE.Vector3(-1, 0, 0),
       fov: CAMERA.interactionFov,
       near: this.focusNear,

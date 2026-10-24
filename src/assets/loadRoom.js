@@ -84,6 +84,36 @@ export async function loadRoom(url, onProgress) {
   throw lastError;
 }
 
+export function bindDeskReviewTrackpadMetal(root) {
+  const laptops = root.getObjectsByProperty("name", "GEO-DESKREVIEW-laptop-root");
+  if (laptops.length !== 1) return { status: "disabled" };
+  const bases = new Set(), pads = [];
+  laptops[0].traverse((mesh) => {
+    if (!mesh.isMesh || !/^AGREED_MacBook_laptop14_body\.?001$/.test(mesh.parent?.name || "")) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    materials.forEach((material) => {
+      if (material?.name === "MAT-DESKREVIEW-laptop-Base") bases.add(material);
+      if (material?.name === "MAT-DESKREVIEW-laptop-Touchpad") pads.push(mesh);
+    });
+  });
+  const pad = pads[0];
+  if (bases.size !== 1 || pads.length !== 1 || Array.isArray(pad.material)
+    || (pad.geometry.index?.count || pad.geometry.attributes.position?.count) !== 42) return { status: "rejected" };
+  // The body bake has empty roughness texels in the pad's different UV island.
+  // Its smoothed normals also bend a geometrically flat surface by about 48°.
+  // Use the body's color with its nearby flat-top PBR samples, without editing
+  // shared materials, geometry, or the surrounding rounded silhouette.
+  const metal = bases.values().next().value.clone();
+  metal.name = "MAT-DESKREVIEW-laptop-Base__TRACKPAD";
+  metal.roughnessMap = null;
+  metal.metalnessMap = null;
+  metal.roughness *= 114 / 255;
+  metal.flatShading = true;
+  metal.needsUpdate = true;
+  pad.material = metal;
+  return { status: "applied", mesh: pad.name, material: pad.material.name };
+}
+
 export function configureRoomMaterials(root, renderer) {
   root.traverse((object) => {
     if (!object.isMesh) return;
@@ -240,6 +270,7 @@ export function configureRoomMaterials(root, renderer) {
       material.needsUpdate = true;
     });
   });
+  bindDeskReviewTrackpadMetal(root);
 }
 
 export function boxForPatterns(root, patterns, fallback = null) {

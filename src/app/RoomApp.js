@@ -1,18 +1,22 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=18";
-import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=14";
+import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=20";
+import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=16";
 import { applyPhotos } from "../assets/applyPhotos.js?v=11";
-import { CameraDirector } from "../camera/CameraDirector.js?v=15";
-import { ScreenLayer } from "../rendering/ScreenLayer.js?v=21";
+import { CameraDirector } from "../camera/CameraDirector.js?v=16";
+import { ScreenLayer } from "../rendering/ScreenLayer.js?v=26";
 import { LightDirector } from "../lighting/LightDirector.js?v=8";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
-import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=2";
-import { InteractionDirector } from "../interaction/InteractionDirector.js?v=22";
+import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=4";
+import { InteractionDirector } from "../interaction/InteractionDirector.js?v=28";
 import { IntroLoader } from "../intro/IntroLoader.js?v=22";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
-import { AWARDS, BOOKS, PLAYLIST } from "../content/roomContent.js?v=4";
+import { AWARDS, BOOKS, PLAYLIST, ROOM_LINKS } from "../content/roomContent.js?v=6";
+import { submitFeltNote } from "../content/submitNote.js?v=2";
+import { loadWritingFeed, writingFeedTemplate } from "../content/writingFeed.js?v=2";
+import { applyNotebookPages } from "../content/notebookPages.js?v=7";
+import { applyNotebookPen } from "../assets/applyNotebookPen.js?v=1";
 
 const INTRO_LINE_ART_URL = "./public/assets/intro/room-line-art-native-grouped-v14-sketch-v5.svg?rev=production-clean-wall-v5";
 function viewportSize() {
@@ -123,6 +127,8 @@ export class RoomApp {
       this.room = await loadRoom(MODEL_URL, (ratio) => this.loading.updateLoadProgress(5 + ratio * 67, "ORGANIZING ROOM"));
       this.room.name = "MYROOM_V64_WEB";
       configureRoomMaterials(this.room, this.renderer);
+      this.notebookPagesReport = await applyNotebookPages(this.room);
+      this.notebookPenReport = await applyNotebookPen(this.room);
       this.lightingSample = await applyStaticOcclusionSample(this.room, MODEL_URL);
       this.root.dataset.lightingSample = this.lightingSample.status;
       this.lights.setR7Polish(this.lightingSample.status === "applied");
@@ -284,6 +290,23 @@ export class RoomApp {
       }
       object.geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     });
+    this.artworkEdgePairs = [];
+    this.artworkViewport = new THREE.Vector2();
+    this.drawingPaper?.updateWorldMatrix(true, true);
+    this.drawingPaper?.traverse((object) => {
+      if (!object.isMesh) return;
+      object.geometry.computeBoundingBox();
+      const box = object.geometry.boundingBox;
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      // Use the paper's two broad local axes, independent of glTF axis conversion.
+      const axes = ["x", "y", "z"].sort((a, b) => size[b] - size[a]).slice(0, 2);
+      this.artworkEdgePairs.push(...axes.map((axis) => [box.min[axis], box.max[axis]].map((coordinate) => {
+        const point = center.clone();
+        point[axis] = coordinate;
+        return { world: point.applyMatrix4(object.matrixWorld), projected: new THREE.Vector3() };
+      })));
+    });
     this.artworkLoader = new THREE.TextureLoader();
     this.artworkUrls = Array.from(
       { length: 27 },
@@ -292,6 +315,9 @@ export class RoomApp {
     this.artworkTextureRecords = new Map();
     this.artworkRequestToken = 0;
     this.artworkIndex = 0;
+    this.artworkDisplayedIndex = null;
+    this.artworkPendingIndex = null;
+    this.artworkErrorIndex = null;
     this.setArtwork(0);
   }
 
@@ -300,14 +326,30 @@ export class RoomApp {
     this.artworkIndex = (index + this.artworkUrls.length) % this.artworkUrls.length;
     const requestedIndex = this.artworkIndex;
     const token = ++this.artworkRequestToken;
+    this.artworkPendingIndex = requestedIndex;
+    this.artworkErrorIndex = null;
+    this.updateArtworkControls();
     const record = this.getArtworkTextureRecord(requestedIndex);
     const applyRequestedTexture = () => {
       if (token !== this.artworkRequestToken || requestedIndex !== this.artworkIndex) return;
       this.applyArtworkTexture(record.texture);
+      this.artworkDisplayedIndex = requestedIndex;
+      this.artworkPendingIndex = null;
+      this.artworkErrorIndex = null;
+      this.updateArtworkControls();
       this.pruneArtworkTextureCache();
     };
     if (record.ready) applyRequestedTexture();
-    else record.callbacks.push(applyRequestedTexture);
+    else {
+      record.callbacks.push(applyRequestedTexture);
+      record.errorCallbacks.push(() => {
+        if (token !== this.artworkRequestToken || requestedIndex !== this.artworkIndex) return;
+        this.artworkPendingIndex = null;
+        this.artworkErrorIndex = requestedIndex;
+        if (this.artworkDisplayedIndex != null) this.artworkIndex = this.artworkDisplayedIndex;
+        this.updateArtworkControls();
+      });
+    }
 
     this.getArtworkTextureRecord((requestedIndex + 1) % this.artworkUrls.length);
   }
@@ -315,17 +357,21 @@ export class RoomApp {
   getArtworkTextureRecord(index) {
     const cached = this.artworkTextureRecords.get(index);
     if (cached) return cached;
-    const record = { texture: null, ready: false, callbacks: [] };
+    const record = { texture: null, ready: false, callbacks: [], errorCallbacks: [] };
     const texture = this.artworkLoader.load(
       this.artworkUrls[index],
       () => {
         record.ready = true;
         record.callbacks.splice(0).forEach((callback) => callback());
+        record.errorCallbacks.length = 0;
         this.pruneArtworkTextureCache();
       },
       undefined,
       (error) => {
         this.artworkTextureRecords.delete(index);
+        record.callbacks.length = 0;
+        record.errorCallbacks.splice(0).forEach((callback) => callback());
+        record.texture?.dispose();
         console.warn(`[portfolio] Failed to load page ${index}`, error);
       },
     );
@@ -345,6 +391,7 @@ export class RoomApp {
       (this.artworkIndex + 1) % count,
       (this.artworkIndex - 1 + count) % count,
     ]);
+    if (this.artworkDisplayedIndex != null) keep.add(this.artworkDisplayedIndex);
     this.artworkTextureRecords.forEach((record, index) => {
       if (keep.has(index) || !record.ready) return;
       record.texture.dispose();
@@ -376,7 +423,62 @@ export class RoomApp {
     });
   }
 
+  bindArtworkControls() {
+    this.artworkControls = document.querySelector("#artwork-controls");
+    this.artworkCounter = document.querySelector("#artwork-page-count");
+    this.artworkStatus = document.querySelector("#artwork-page-status");
+    this.artworkControlsActive = false;
+    if (!this.artworkControls) return;
+    ["pointerdown", "pointerup"].forEach((type) => this.artworkControls.addEventListener(type, (event) => event.stopPropagation()));
+    this.artworkControls.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const step = Number(event.target.closest("[data-artwork-step]")?.dataset.artworkStep);
+      if (step === -1 || step === 1) this.setArtwork(this.artworkIndex + step);
+    });
+  }
+
+  setArtworkControlsActive(active) {
+    if (active === this.artworkControlsActive) return;
+    this.artworkControlsActive = active;
+    if (this.artworkControls) this.artworkControls.hidden = !active;
+  }
+
+  positionArtworkControls() {
+    if (!this.artworkControlsActive || !this.artworkEdgePairs?.length) return;
+    this.camera.updateWorldMatrix(true, false);
+    this.renderer.getSize(this.artworkViewport);
+    let edges;
+    let horizontalSpan = -1;
+    for (const pair of this.artworkEdgePairs) {
+      pair.forEach((point) => point.projected.copy(point.world).project(this.camera));
+      const span = Math.abs(pair[1].projected.x - pair[0].projected.x);
+      if (span > horizontalSpan) { horizontalSpan = span; edges = pair; }
+    }
+    const [left, right] = [...edges].sort((a, b) => a.projected.x - b.projected.x);
+    const x = (point) => Math.round((point.projected.x * .5 + .5) * this.artworkViewport.x);
+    const y = (point) => Math.round((.5 - point.projected.y * .5) * this.artworkViewport.y);
+    const positions = [x(left) - 16, y(left), x(right) + 16, y(right)];
+    const key = positions.join(",");
+    if (key === this.artworkPositionKey) return;
+    this.artworkPositionKey = key;
+    ["--artwork-left-x", "--artwork-left-y", "--artwork-right-x", "--artwork-right-y"].forEach((name, index) => {
+      this.artworkControls.style.setProperty(name, `${positions[index]}px`);
+    });
+  }
+
+  updateArtworkControls() {
+    if (!this.artworkControls) return;
+    const page = this.artworkDisplayedIndex == null ? "—" : this.artworkDisplayedIndex + 1;
+    this.artworkCounter.textContent = `${page} / ${this.artworkUrls.length}`;
+    this.artworkControls.setAttribute("aria-busy", String(this.artworkPendingIndex != null));
+    this.artworkStatus.textContent = this.artworkPendingIndex != null
+      ? `Loading page ${this.artworkPendingIndex + 1}…`
+      : this.artworkErrorIndex != null ? `Could not load page ${this.artworkErrorIndex + 1}. Try again.` : "";
+    this.artworkStatus.hidden = !this.artworkStatus.textContent;
+  }
+
   bindUI() {
+    this.bindArtworkControls();
     this.modeToggle = document.querySelector("#mode-toggle");
     this.root.addEventListener("click", (event) => {
       if (!this.firstOrdinaryClickPending || event.target.closest("#mode-toggle")) return;
@@ -388,14 +490,17 @@ export class RoomApp {
       event.stopPropagation();
       this.setMode(this.mode === "night" ? "day" : "night");
     });
-    document.querySelector("#reset-view").addEventListener("click", () => { this.interactions?.exitActive(); this.cameraDirector.goGlobal(); });
-    document.querySelector(".brand").addEventListener("click", (event) => { event.preventDefault(); this.interactions?.exitActive(); this.cameraDirector.goGlobal(); });
+    document.querySelector("#reset-view").addEventListener("click", () => this.cameraDirector.goGlobal());
+    document.querySelector(".brand").addEventListener("click", (event) => { event.preventDefault(); this.cameraDirector.goGlobal(); });
     document.querySelectorAll("[data-light]").forEach((button) => button.addEventListener("click", () => this.toggleLight(button.dataset.light)));
     const closePanel = () => this.interactions ? this.interactions.exitActive() : this.showPanel(null);
     this.panel.querySelector(".panel-close").setAttribute("aria-label", "Close panel");
     this.panel.querySelector(".panel-close").addEventListener("click", closePanel);
     this.panel.querySelector(".panel-backdrop").addEventListener("pointerdown", closePanel);
-    addEventListener("keydown", (event) => { if (event.key === "Escape" && !this.panel.hidden) this.interactions?.exitActive(); });
+    addEventListener("keydown", (event) => {
+      // Notebook text is read in 3D with no card, but keeps its existing exit key.
+      if (event.key === "Escape" && (!this.panel.hidden || this.interactions?.activeRule?.id === "notebook")) this.interactions?.exitActive();
+    });
     addEventListener("message", (event) => {
       if (event.source !== this.galaxy?.contentWindow) return;
       const galaxyOrigin = new URL(CONTENT.galaxy, window.location.href).origin;
@@ -448,6 +553,9 @@ export class RoomApp {
   }
 
   showPanel(kind, rule) {
+    this.writingFeedController?.abort();
+    this.writingFeedController = null;
+    if (kind !== "felt") this.updateNoteSubmissionUI = null;
     if (!kind) {
       this.stopMusic();
       this.panel.hidden = true;
@@ -456,18 +564,23 @@ export class RoomApp {
       return;
     }
     if (kind === "drawing") {
-      this.setArtwork(this.artworkIndex + 1);
+      this.setArtwork(this.artworkIndex + (rule?.artworkStep === -1 ? -1 : 1));
       this.panel.hidden = true;
+      return;
+    }
+    if (kind === "frame" || kind === "notebook") {
+      this.panel.hidden = true;
+      this.panel.removeAttribute("data-kind");
+      this.panelContent.innerHTML = "";
       return;
     }
     if (kind === "book" && Number.isInteger(rule?.bookIndex)) this.bookIndex = rule.bookIndex;
     const templates = {
       trophy: this.trophyPanelTemplate(),
       music: this.musicPanelTemplate(),
-      felt: `<div class="media-card note-compose-card"><form class="note-form"><textarea maxlength="120" placeholder="Write something…" aria-label="Note text" required></textarea><button type="submit" aria-label="Add note"><span aria-hidden="true">↵</span> add note</button></form></div><div class="note-cloud"><p class="panel-eyebrow">Pinned notes</p><div class="note-list"></div></div><div class="note-viewer" hidden><article><button type="button" class="note-viewer-close" data-note-viewer-close aria-label="Close enlarged note">×</button><p></p></article></div>`,
-      frame: `<p class="panel-eyebrow">Room memory</p><h2>A photograph</h2><p>A small moment kept inside the room.</p>`,
+      felt: `<div class="media-card note-compose-card"><form class="note-form"><div class="note-fields"><label>Name<input name="name" type="text" autocomplete="name" required></label><label>Contact<input name="contact" type="text" placeholder="Email, WeChat, etc." required></label></div><textarea name="message" maxlength="120" placeholder="Write something…" aria-label="Note text" required></textarea><button type="submit" aria-label="Send note"><span aria-hidden="true">↵</span> send note</button></form><p class="note-delivery-notice">Send a note to daoyi. Your contact information stays private. A copy of the note is kept on this device.</p><p class="note-submit-status" role="status" aria-live="polite"></p></div><div class="note-cloud"><p class="panel-eyebrow">Pinned notes</p><div class="note-list"></div></div><div class="note-viewer" hidden><article><button type="button" class="note-viewer-close" data-note-viewer-close aria-label="Close enlarged note">×</button><p></p></article></div>`,
       book: this.bookPanelTemplate(),
-      notebook: `<p class="panel-eyebrow">Working notes</p><h2>Brainstorming notebook</h2><p>24/07/2024 · Gamification ideas · User profiles · New app integration.</p>`,
+      writing: this.linkPanelTemplate(ROOM_LINKS.writing, true),
     };
     this.panelContent.innerHTML = templates[kind] || "";
     this.panel.dataset.kind = kind;
@@ -475,6 +588,36 @@ export class RoomApp {
     if (kind === "felt") this.bindNotes();
     if (kind === "music") this.bindMusicPanel();
     if (kind === "book") this.bindBookPanel();
+    if (kind === "writing") this.bindWritingPanel();
+  }
+
+  linkPanelTemplate(link, showFeed = false) {
+    if (!link?.url) return "";
+    let url;
+    try { url = new URL(link.url); } catch { return ""; }
+    if (!/^https?:$/.test(url.protocol)) return "";
+    const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+    return `<div class="media-card link-card"><p class="panel-eyebrow">${escape(link.label)}</p><h2 class="link-card-title">${showFeed ? '<img src="./public/assets/branding/substack-logo.png" width="32" height="32" alt="" aria-hidden="true">' : ""}${escape(link.title)}</h2><p class="link-account">${escape(link.account)}</p>${showFeed ? `<div class="writing-feed">${writingFeedTemplate(null)}</div>` : ""}<a class="panel-link" href="${escape(url.href)}" target="_blank" rel="noopener noreferrer">Visit ${escape(link.title)} <span aria-hidden="true">↗</span></a></div>`;
+  }
+
+  async bindWritingPanel() {
+    const container = this.panelContent.querySelector(".writing-feed");
+    const controller = new AbortController();
+    this.writingFeedController = controller;
+    container.innerHTML = writingFeedTemplate(this.writingFeedCache, { refreshing: true });
+    const current = () => this.writingFeedController === controller && this.panel.dataset.kind === "writing" && container.isConnected;
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const feed = await loadWritingFeed({ signal: controller.signal });
+      if (!current()) return;
+      this.writingFeedCache = feed;
+      container.innerHTML = writingFeedTemplate(feed);
+    } catch {
+      if (current()) container.innerHTML = writingFeedTemplate(this.writingFeedCache, { failed: true });
+    } finally {
+      clearTimeout(timer);
+      if (this.writingFeedController === controller) this.writingFeedController = null;
+    }
   }
 
   musicPanelTemplate() {
@@ -672,12 +815,15 @@ export class RoomApp {
 
   bindNotes() {
     const key = "daoyi-room-felt-notes-v2";
-    localStorage.removeItem("daoyi-room-felt-notes");
+    try { localStorage.removeItem("daoyi-room-felt-notes"); } catch { /* Local storage can be unavailable. */ }
     const form = this.panelContent.querySelector(".note-form");
     const cloud = this.panelContent.querySelector(".note-cloud");
     const list = this.panelContent.querySelector(".note-list");
     const read = () => {
-      try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch { return []; }
+      try {
+        const notes = JSON.parse(localStorage.getItem(key) || "[]");
+        return Array.isArray(notes) ? notes.filter((note) => typeof note === "string") : [];
+      } catch { return []; }
     };
     const viewer = this.panelContent.querySelector(".note-viewer");
     const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
@@ -727,20 +873,67 @@ export class RoomApp {
         viewer.hidden = false;
       }));
     };
-    form?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const field = form.querySelector("textarea");
-      const value = field.value.trim();
-      if (!value) return;
-      localStorage.setItem(key, JSON.stringify([...read(), value].slice(-12)));
-      field.value = "";
+    const fields = Object.fromEntries(["name", "contact", "message"].map((name) => [name, form.querySelector(`[name="${name}"]`)]));
+    const submit = form.querySelector('button[type="submit"]');
+    const status = this.panelContent.querySelector(".note-submit-status");
+    // Preserve a draft from the previous message-only form during a live update.
+    if (typeof this.noteDraft === "string") this.noteDraft = { name: "", contact: "", message: this.noteDraft };
+    this.noteDraft ??= { name: "", contact: "", message: "" };
+    Object.entries(fields).forEach(([name, field]) => {
+      field.value = this.noteDraft[name];
+      field.addEventListener("input", () => {
+        this.noteDraft[name] = field.value;
+        field.removeAttribute("aria-invalid");
+      });
+    });
+    this.updateNoteSubmissionUI = () => {
+      submit.disabled = Boolean(this.noteSubmitPending);
+      Object.entries(fields).forEach(([name, field]) => {
+        field.disabled = Boolean(this.noteSubmitPending);
+        field.value = this.noteDraft[name];
+      });
+      form.setAttribute("aria-busy", String(Boolean(this.noteSubmitPending)));
+      status.textContent = this.noteSubmitStatus || "";
+      submit.innerHTML = this.noteSubmitPending ? "sending…" : '<span aria-hidden="true">↵</span> send note';
       render();
+    };
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (this.noteSubmitPending) return;
+      this.noteDraft = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value]));
+      const note = Object.fromEntries(Object.entries(this.noteDraft).map(([name, value]) => [name, value.trim()]));
+      const missing = Object.keys(fields).find((name) => !note[name]);
+      if (missing) {
+        this.noteSubmitStatus = "Please add your name, contact information and note.";
+        fields[missing].setAttribute("aria-invalid", "true");
+        fields[missing].focus();
+        this.updateNoteSubmissionUI?.();
+        return;
+      }
+      this.noteSubmitPending = true;
+      this.noteSubmitStatus = "Sending…";
+      this.updateNoteSubmissionUI?.();
+      try {
+        await submitFeltNote(note);
+        try {
+          localStorage.setItem(key, JSON.stringify([...read(), note.message].slice(-12)));
+          this.noteSubmitStatus = "Sent. Thank you.";
+        } catch {
+          this.noteSubmitStatus = "Sent. A copy could not be saved on this device.";
+        }
+        this.noteDraft = { name: "", contact: "", message: "" };
+      } catch (error) {
+        this.noteSubmitStatus = error.message;
+      } finally {
+        this.noteSubmitPending = false;
+        this.updateNoteSubmissionUI?.();
+      }
     });
     viewer?.querySelectorAll("[data-note-viewer-close]").forEach((button) => button.addEventListener("click", (event) => {
       event.stopPropagation();
       viewer.hidden = true;
     }));
-    render();
+    this.updateNoteSubmissionUI();
   }
 
   scheduleGalaxyPreload(delayMs = 0) {
@@ -1021,6 +1214,8 @@ export class RoomApp {
     // transition freezes its first, tiny CSS3D rectangle and leaves a large
     // empty screen shell. Wait until both transition types are complete.
     const screenFocusSettled = !cameraMoving;
+    this.setArtworkControlsActive(screenFocusSettled && this.cameraDirector.level === "interaction" && this.interactions?.activeRule?.id === "drawing");
+    this.positionArtworkControls();
     const focusedScreen = this.cameraDirector.level === "interaction" ? this.interactions?.activeRule?.screen : null;
     this.screens.setTransitioning(focusedScreen && !screenFocusSettled ? focusedScreen : null, cameraMoving);
     const activeScreen = screenFocusSettled ? focusedScreen : null;

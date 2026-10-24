@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import { CSS3DObject, CSS3DRenderer } from "three/addons/renderers/CSS3DRenderer.js";
-import { CONTENT } from "../config.js?v=18";
+import { CONTENT } from "../config.js?v=20";
+
+// Keep CSS geometry in pixel-sized units. Meter-sized sibling iframe planes
+// can be incorrectly clipped by Chromium's 3D compositor at oblique views.
+const CSS_WORLD_SCALE = 1000;
 
 const CONTRACTS = {
   imac: { prefix: "IMAC", material: /^screen$/i, logicalWidth: 1440 },
@@ -10,7 +14,7 @@ const CONTRACTS = {
 
 const PREVIEW_URLS = {
   imac: "./public/assets/screens/imac-home.png",
-  macbook: "./public/assets/screens/macbook-github-pages-1440x930.jpg",
+  macbook: "./public/assets/screens/macbook-github-pages-desk-review-v03-1425x947.jpg",
   phone: "./public/assets/screens/phone-home.png",
 };
 
@@ -123,6 +127,8 @@ export class ScreenLayer extends EventTarget {
     this.camera = camera;
     this.webglScene = webglScene;
     this.scene = new THREE.Scene();
+    this.scene.scale.setScalar(CSS_WORLD_SCALE);
+    this.renderCameras = new WeakMap();
     this.renderer = new CSS3DRenderer();
     this.renderer.domElement.style.position = "absolute";
     this.renderer.domElement.style.inset = "0";
@@ -142,10 +148,13 @@ export class ScreenLayer extends EventTarget {
     this.contentStartTimers = [];
     this.pendingInteractiveKind = null;
     container.addEventListener("pointerdown", (event) => {
+      if (event.target.closest?.("#reset-view, .topbar a.brand")) return;
       if (!this.activeKind || event.target.closest?.(".model-screen.is-interactive")) return;
       this.dispatchEvent(new CustomEvent("outsideclick", { detail: { kind: this.activeKind } }));
     });
     document.addEventListener("pointerdown", (event) => {
+      // Global controls own their click transition; do not start a local exit first.
+      if (event.target.closest?.("#reset-view, .topbar a.brand")) return;
       if (!this.activeKind || event.target.closest?.(".model-screen")) return;
       this.dispatchEvent(new CustomEvent("outsideclick", { detail: { kind: this.activeKind } }));
     }, true);
@@ -320,14 +329,11 @@ export class ScreenLayer extends EventTarget {
       const mobileInteractive = this.mobileCompositing
         && !this.sceneMoving
         && this.overlayKind === screen.kind;
-      // Keep desktop pages live during motion to avoid swapping their text
-      // and graphics for a static preview. Mobile retains its preview policy.
-      const desktopPage = screen.kind === "imac" || screen.kind === "macbook";
-      const motionFallback = this.sceneMoving && !desktopPage;
-      const focusedPhoneFallback = screen.kind === this.transitionKind && screen.kind === "phone";
+      // Keep loaded desktop iframes live during motion, including the phone,
+      // so transitions do not swap their content or suspend iframe painting.
       const useFallback = this.mobileCompositing
         ? !mobileInteractive
-        : !screen.contentReady || motionFallback || focusedPhoneFallback;
+        : !screen.contentReady;
       screen.fallback.visible = useFallback;
       screen.element.style.contentVisibility = useFallback ? "hidden" : "visible";
       // `visibility:hidden` keeps animated cross-origin pages scheduled in
@@ -460,12 +466,36 @@ export class ScreenLayer extends EventTarget {
   setCamera(camera) { this.camera = camera; this.cameraState = null; }
   resize(width, height) { this.renderer.setSize(width, height); this.cameraState = null; }
 
+  cssRenderCamera(camera) {
+    let copy = this.renderCameras.get(camera);
+    if (!copy) {
+      copy = camera.clone(false);
+      this.renderCameras.set(camera, copy);
+    }
+    camera.matrixWorld.decompose(copy.position, copy.quaternion, copy.scale);
+    copy.position.multiplyScalar(CSS_WORLD_SCALE);
+    copy.near = camera.near * CSS_WORLD_SCALE;
+    copy.far = camera.far * CSS_WORLD_SCALE;
+    copy.layers.mask = camera.layers.mask;
+    copy.view = camera.view;
+    copy.projectionMatrix.copy(camera.projectionMatrix);
+    if (camera.isOrthographicCamera) {
+      for (const side of ["left", "right", "top", "bottom"]) copy[side] = camera[side] * CSS_WORLD_SCALE;
+      for (const index of [0, 5, 10]) copy.projectionMatrix.elements[index] /= CSS_WORLD_SCALE;
+    } else {
+      copy.projectionMatrix.elements[14] *= CSS_WORLD_SCALE;
+    }
+    copy.projectionMatrixInverse.copy(copy.projectionMatrix).invert();
+    copy.updateMatrixWorld(true);
+    return copy;
+  }
+
   render(force = false) {
     if (this.overlayKind) return false;
     // Loaded desktop pages need current camera transforms during motion.
     // Preview-only and mobile views can still skip this CSS3D work.
     const liveDesktopPage = !this.mobileCompositing
-      && (this.screens.imac?.contentReady || this.screens.macbook?.contentReady);
+      && (this.screens.imac?.contentReady || this.screens.macbook?.contentReady || this.screens.phone?.contentReady);
     if (this.sceneMoving && !force && !liveDesktopPage) {
       this.skippedFrames += 1;
       return false;
@@ -478,7 +508,7 @@ export class ScreenLayer extends EventTarget {
       this.skippedFrames += 1;
       return false;
     }
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.scene, this.cssRenderCamera(this.camera));
     this.cameraState = nextState;
     this.renderedFrames += 1;
     return true;
