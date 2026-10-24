@@ -29,6 +29,7 @@ jobs:
           node-version: 22
       - run: npm run check
       - name: Refresh the public Substack snapshot
+        continue-on-error: true
         run: python3 tools/sync-substack.py
       - uses: actions/configure-pages@v5
       - name: Prepare static site
