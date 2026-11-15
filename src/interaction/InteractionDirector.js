@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { objectPath } from "../assets/loadRoom.js?v=16";
+import { objectPath } from "../assets/loadRoom.js?v=18";
 import { BOOK_INDEX_BY_MODEL_ID } from "../content/roomContent.js?v=6";
 
 export const RULES = [
@@ -79,6 +79,8 @@ export class InteractionDirector {
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.hovered = null;
+    this.activeBookMotion = new Set();
+    room.traverse((object) => { if (object.userData.hoverTarget != null) this.activeBookMotion.add(object); });
     this.activeRule = null;
     this.regionPose = null;
     this.pointerDown = null;
@@ -121,12 +123,16 @@ export class InteractionDirector {
       if (this.hovered) {
         this.hovered.userData.baseY ??= this.hovered.position.y;
         this.hovered.userData.hoverTarget = this.hovered.userData.baseY + (isHorizontalBook(this.hovered) ? 0 : .025);
+        this.activeBookMotion.add(this.hovered);
       }
     }
   }
 
   releaseBook() {
-    if (this.hovered && this.hovered !== this.selectedBook) this.hovered.userData.hoverTarget = this.hovered.userData.baseY;
+    if (this.hovered && this.hovered !== this.selectedBook) {
+      this.hovered.userData.hoverTarget = this.hovered.userData.baseY;
+      this.activeBookMotion.add(this.hovered);
+    }
     this.hovered = null;
   }
 
@@ -162,10 +168,14 @@ export class InteractionDirector {
           this.activeRule = rule;
           return this.activate({ ...rule, bookId: book.name, bookIndex });
         }
-        if (this.selectedBook && this.selectedBook !== book) this.selectedBook.userData.hoverTarget = this.selectedBook.userData.baseY;
+        if (this.selectedBook && this.selectedBook !== book) {
+          this.selectedBook.userData.hoverTarget = this.selectedBook.userData.baseY;
+          this.activeBookMotion.add(this.selectedBook);
+        }
         this.selectedBook = book;
         book.userData.baseY ??= book.position.y;
         book.userData.hoverTarget = book.userData.baseY + (isHorizontalBook(book) ? 0 : .035);
+        this.activeBookMotion.add(book);
         return;
       }
       return this.focus(rule, hit.object);
@@ -223,6 +233,7 @@ export class InteractionDirector {
       object.position.y = object.userData.baseY;
       object.userData.hoverTarget = object.userData.baseY;
     });
+    this.activeBookMotion.clear();
     this.hovered = null;
     this.selectedBook = null;
   }
@@ -490,9 +501,11 @@ export class InteractionDirector {
 
   update() {
     this.updateDrawingLampOcclusion();
-    this.room.traverse((object) => {
-      if (object.userData.hoverTarget == null) return;
+    for (const object of this.activeBookMotion) {
+      if (!Number.isFinite(object.userData.hoverTarget)) { this.activeBookMotion.delete(object); continue; }
+      const previousY = object.position.y;
       object.position.y += (object.userData.hoverTarget - object.position.y) * .14;
-    });
+      if (object.position.y === previousY) this.activeBookMotion.delete(object);
+    }
   }
 }

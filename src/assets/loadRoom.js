@@ -114,11 +114,37 @@ export function bindDeskReviewTrackpadMetal(root) {
   return { status: "applied", mesh: pad.name, material: pad.material.name };
 }
 
+export function roomWindowGlass(root) {
+  const matches = root.getObjectsByProperty("name", "ARCH_WindowGlass");
+  if (matches.length !== 1) return null;
+  const mesh = matches[0], material = mesh.material;
+  // Only this single-purpose pane is hidden. Unknown topology, mixed slots or
+  // a shared material must leave the model unchanged, including its frame.
+  if (!mesh.isMesh || Array.isArray(material)
+    || mesh.geometry.attributes.position?.count !== 186 || mesh.geometry.index?.count !== 360
+    || !material?.isMeshPhysicalMaterial || material.name !== "MAT-Window_ClearGlass_WebReady"
+    || material.transmission !== 1 || !material.transparent || material.side !== THREE.DoubleSide
+    || Math.abs(material.opacity - .12) > 1e-6) return null;
+  let users = 0;
+  root.traverse((object) => {
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    users += materials.filter((candidate) => candidate === material).length;
+  });
+  return users === 1 ? mesh : null;
+}
+
 export function configureRoomMaterials(root, renderer) {
+  const monitorGroups = root.getObjectsByProperty("name", "AGREED_iMac_Cube001");
+  const housings = monitorGroups.length === 1 ? monitorGroups[0].children.filter((object) => object.name === "mesh_5") : [];
+  // This exact silver housing casts the unwanted horizontal desktop line.
+  // Keep unknown model revisions and every other monitor part unchanged.
+  const monitorHousing = housings.length === 1 && housings[0].isMesh
+    && housings[0].geometry.attributes.position?.count === 14129 && housings[0].geometry.index?.count === 52995
+    && housings[0].material?.name === "MAT-Silver_Apple_Satin_Aluminum" ? housings[0] : null;
   root.traverse((object) => {
     if (!object.isMesh) return;
     const suppressWallCast = /^(?:GEO-v48-Shelf_Post_\d+|GEO-v57-WallDisplay_FeltBoard)$/i.test(object.name || "");
-    object.castShadow = !/glass|window/i.test(object.name) && !suppressWallCast;
+    object.castShadow = !/glass|window/i.test(object.name) && !suppressWallCast && object !== monitorHousing;
     object.receiveShadow = true;
     const path = objectPath(object);
     if (/GEO-v58-Notebook_(?:Left|Right)PageSurface/i.test(object.name)) {
@@ -271,6 +297,8 @@ export function configureRoomMaterials(root, renderer) {
     });
   });
   bindDeskReviewTrackpadMetal(root);
+  const windowGlass = roomWindowGlass(root);
+  if (windowGlass) windowGlass.material.visible = false;
 }
 
 export function boxForPatterns(root, patterns, fallback = null) {

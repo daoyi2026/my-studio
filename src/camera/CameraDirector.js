@@ -118,6 +118,40 @@ export class CameraDirector extends EventTarget {
     this.currentPose = pose;
   }
 
+  discardControlInertia() {
+    const controls = this.controls;
+    const camera = controls.object;
+    const saved = {
+      position: camera.position.clone(), quaternion: camera.quaternion.clone(), up: camera.up.clone(),
+      target: controls.target.clone(), zoom: camera.zoom,
+      matrix: camera.matrix.clone(), matrixWorld: camera.matrixWorld.clone(), matrixWorldInverse: camera.matrixWorldInverse.clone(),
+      projectionMatrix: camera.projectionMatrix.clone(), projectionMatrixInverse: camera.projectionMatrixInverse.clone(),
+      matrixWorldNeedsUpdate: camera.matrixWorldNeedsUpdate,
+      enableDamping: controls.enableDamping, autoRotate: controls.autoRotate,
+    };
+    try {
+      // r165 exposes no inertia reset. One undamped update consumes its private
+      // rotate/pan/dolly state; none of that obsolete movement may reach the view.
+      controls.enableDamping = false;
+      controls.autoRotate = false;
+      controls.update();
+    } finally {
+      camera.position.copy(saved.position);
+      camera.quaternion.copy(saved.quaternion);
+      camera.up.copy(saved.up);
+      controls.target.copy(saved.target);
+      camera.zoom = saved.zoom;
+      camera.matrix.copy(saved.matrix);
+      camera.matrixWorld.copy(saved.matrixWorld);
+      camera.matrixWorldInverse.copy(saved.matrixWorldInverse);
+      camera.projectionMatrix.copy(saved.projectionMatrix);
+      camera.projectionMatrixInverse.copy(saved.projectionMatrixInverse);
+      camera.matrixWorldNeedsUpdate = saved.matrixWorldNeedsUpdate;
+      controls.enableDamping = saved.enableDamping;
+      controls.autoRotate = saved.autoRotate;
+    }
+  }
+
   transition(pose, { level = this.level, region = this.region, duration = 1250 } = {}) {
     if (!this.isValidPose(pose)) {
       console.warn(`[camera] Ignored invalid ${pose?.label || "focus"} pose`);
@@ -129,6 +163,7 @@ export class CameraDirector extends EventTarget {
       this.beginHybridDolly(pose, { level, region, duration });
       return true;
     }
+    this.discardControlInertia();
     this.activateCamera(pose.projection || "perspective", { matchView: true });
     this.tween = {
       start: performance.now(), duration,
@@ -151,6 +186,11 @@ export class CameraDirector extends EventTarget {
   }
 
   beginHybridDolly(pose, { level, region, duration }) {
+    if (!this.isValidPose(pose)) {
+      console.warn(`[camera] Ignored invalid ${pose?.label || "focus"} pose`);
+      return false;
+    }
+    this.discardControlInertia();
     const source = this.camera;
     const from = { position: source.position.clone(), target: this.controls.target.clone(), up: source.up.clone(), near: source.near, orthographicHalfHeight: this.orthographicHalfHeight };
     const phase = .26;

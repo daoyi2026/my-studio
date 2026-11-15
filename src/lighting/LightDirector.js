@@ -119,12 +119,14 @@ export class LightDirector {
     this.lampTransitionDuration = 1500;
     this.r7Polish = false;
     this.rig = {};
+    this.valuesDirty = true;
     const pmrem = new THREE.PMREMGenerator(renderer);
     this.environment = pmrem.fromScene(new RoomEnvironment(), .04).texture;
     scene.environment = this.environment;
   }
 
   configure(room, roomBounds) {
+    this.valuesDirty = true;
     const size = roomBounds.getSize(new THREE.Vector3());
     const center = roomBounds.getCenter(new THREE.Vector3());
     const hemi = new THREE.HemisphereLight(0xe9efff, 0x5e5649, .42);
@@ -180,6 +182,7 @@ export class LightDirector {
     halo.position.copy(origin);
     this.scene.add(spot, spot.target, halo);
     this.rig.lamps[kind] = { group, bulb, spot, halo };
+    this.valuesDirty = true;
   }
 
   addScreenLight(screen) {
@@ -188,6 +191,7 @@ export class LightDirector {
     light.position.copy(frame.center).addScaledVector(frame.normal, .05);
     this.scene.add(light);
     this.rig.screenLights[screen.kind] = light;
+    this.valuesDirty = true;
   }
 
   addWindowPatches(room, roomBounds) {
@@ -228,15 +232,17 @@ export class LightDirector {
     };
     this.rig.dayPatch = makePatch(true);
     this.rig.nightPatch = makePatch(false);
+    this.valuesDirty = true;
   }
 
   setLamp(kind, value = !this.lampState[kind]) {
     this.lampState[kind] = value;
     this.lampTransitions[kind] = { from: this.lampBlend[kind] ?? 0, to: value ? 1 : 0, elapsed: 0 };
+    this.valuesDirty = true;
     return value;
   }
 
-  setR7Polish(enabled) { this.r7Polish = Boolean(enabled); }
+  setR7Polish(enabled) { this.r7Polish = Boolean(enabled); this.valuesDirty = true; }
 
   lampTargets(kind) {
     const enabled = this.lampBlend[kind] ?? (this.lampState[kind] ? 1 : 0);
@@ -249,12 +255,14 @@ export class LightDirector {
   }
 
   setMode(mode, immediate = false) {
+    this.valuesDirty = true;
     this.mode = mode;
     if (immediate) {
       this.modeBlend = mode === "day" ? 1 : 0;
       this.modeTransition = null;
       this.applyEnvironment();
       this.applyLampTargets();
+      this.valuesDirty = false;
     } else {
       this.modeTransition = { from: this.modeBlend, to: mode === "day" ? 1 : 0, elapsed: 0 };
     }
@@ -287,6 +295,7 @@ export class LightDirector {
   }
 
   update(delta) {
+    if (!this.valuesDirty && !this.modeTransition && !Object.keys(this.lampTransitions).length) return;
     if (this.modeTransition) {
       this.modeTransition.elapsed += Math.max(delta, 0) * 1000;
       const raw = Math.min(1, this.modeTransition.elapsed / this.modeTransitionDuration);
@@ -303,5 +312,6 @@ export class LightDirector {
     });
     this.applyEnvironment();
     this.applyLampTargets();
+    this.valuesDirty = false;
   }
 }
