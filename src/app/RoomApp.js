@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=20";
+import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=22";
 import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=18";
-import { applyPhotos } from "../assets/applyPhotos.js?v=11";
+import { applyPhotos } from "../assets/applyPhotos.js?v=12";
 import { CameraDirector } from "../camera/CameraDirector.js?v=17";
 import { ScreenLayer } from "../rendering/ScreenLayer.js?v=26";
 import { LightDirector } from "../lighting/LightDirector.js?v=9";
@@ -275,6 +275,11 @@ export class RoomApp {
 
   configureArtwork() {
     this.drawingPaper = this.room.getObjectByName("GEO-v62-DraftingBoard-Paper_Placeholder");
+    const paper = this.drawingPaper, material = paper?.material;
+    this.artworkPaperLightingSource = this.room.getObjectsByProperty("name", "GEO-v62-DraftingBoard-Paper_Placeholder").length === 1
+      && paper?.isMesh && paper.geometry.getAttribute("position")?.count === 24 && paper.geometry.index?.count === 36
+      && !Array.isArray(material) && material?.isMeshStandardMaterial && material.name === "MAT-v63-Paper_White"
+      ? material : null;
     this.drawingPaper?.traverse((object) => {
       if (!object.isMesh || object.geometry.getAttribute("uv")) return;
       object.geometry = object.geometry.clone();
@@ -409,12 +414,17 @@ export class RoomApp {
           material.needsUpdate = true;
           return material;
         }
-        const print = new THREE.MeshBasicMaterial({
+        // The accepted single-purpose paper keeps its own PBR response. An
+        // unlit print stayed white even when its practical lamp was off.
+        const print = object === this.drawingPaper && material === this.artworkPaperLightingSource
+          ? material.clone()
+          : new THREE.MeshBasicMaterial({
           map: texture,
           color: 0xffffff,
           side: material.side,
           toneMapped: false,
         });
+        print.map = texture;
         print.name = `${material.name || "DrawingPaper"}-PortfolioPrint`;
         print.userData.portfolioPrint = true;
         return print;

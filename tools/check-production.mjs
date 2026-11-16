@@ -5,6 +5,14 @@ import { readFile, stat, readdir } from "node:fs/promises";
 const root = new URL("../", import.meta.url);
 const modelHash = "4ce10f1bb16cfe7fe89f90e25c171635f3392e2801e49fcbd6911f3a5baaf547";
 const expectedHashes = new Map([
+  ["public/assets/photos/room-update-20261116/photo-01.jpg", "32dfdbd20627b9808d48d01219530ff1ae12eec49ac492b53cfcb9f3b465ba64"],
+  ["public/assets/photos/room-update-20261116/photo-02.jpg", "655b1774ab950a113df55b00f68de2962614a8e5d9b3904feab0b2086dbef107"],
+  ["public/assets/photos/room-update-20261116/photo-03.jpg", "ddca07ed692fd352818e06967c7c86d66cdd8bdecccce13847a3825696a35b5e"],
+  ["public/assets/photos/room-update-20261116/photo-04.jpg", "c6963a400c4130fa864b1970e33a6d4d1308268bf403ddfe4cedc393252cb7f9"],
+  ["public/assets/photos/room-update-20261116/photo-05.jpg", "a66b36f5f10819234dcda81d0b47182cdebf260757d4dfa0df4c92efffa0a10a"],
+  ["public/assets/photos/room-update-20261116/photo-07.jpg", "f9d50dc6eb1908a78a5b135b1a7278e8613bbb8afd58eae44cc3a219005f5ae6"],
+  ["public/assets/photos/room-update-20261116/photo-08.jpg", "436e728ab44c6fb6241daf2cd1ffc0c25d08f860f7906a1949784af299e9d993"],
+  ["public/assets/photos/room-update-20261116/photo-snow-sheep-v2.jpg", "9743a8a5d92671bf650382e0f949eb3bb3f0275344d6dfb0c557888f89380511"],
   ["public/model/myroom-studio-v1.glb", modelHash],
   ["public/assets/lighting/r7/manifest.json", "93a3844cca6be9fb8ed08ab6a0f12c28f04ada40b072a8ed8a477c716d59a208"],
   ["public/assets/lighting/r7/atlas.png", "8930c236593ac5583188f0c224ffda25c15935d4c065bb7d9d758bf1beedd138"],
@@ -64,7 +72,7 @@ const config = await readFile(new URL("src/config.js", root), "utf8");
 assert.ok(config.includes("./public/model/myroom-studio-v1.glb?rev=4ce10f1b"), "Accepted model is the production default");
 assert.ok(config.includes("https://daoyi2026.github.io/Moonrise/") && config.includes('macbook: "https://daoyi2026.github.io/"'));
 const index = await readFile(new URL("index.html", root), "utf8");
-assert.ok(index.includes("./src/main.js?v=126") && index.includes("data-intro-line-art"));
+assert.ok(index.includes("./src/main.js?v=129") && index.includes("data-intro-line-art"));
 assert.ok(index.includes('href="mailto:rendaoyi@outlook.com"'));
 const lighting = await readFile(new URL("src/lighting/StaticOcclusionSample.js", root), "utf8");
 assert.ok(lighting.includes("./public/assets/lighting/r7/") && lighting.includes(modelHash));

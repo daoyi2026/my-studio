@@ -105,7 +105,7 @@ function replaceMatchingMaterial(mesh, matcher, texture, forceNamedPlane = false
   return replaced;
 }
 
-function stabilizeCollageDepth(object, root, layer) {
+function stabilizeCollageDepth(object, container, root, layer) {
   if (!object?.isMesh || layer < 0) return null;
   const roomCenter = new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3());
   const frame = surfaceFrame(object, null, roomCenter);
@@ -114,10 +114,24 @@ function stabilizeCollageDepth(object, root, layer) {
   // exactly coplanar. Preserve that layout while giving each card a sub-mm
   // physical stack depth toward the room.
   const offset = (layer + 1) * .00045;
-  const worldPosition = object.getWorldPosition(new THREE.Vector3()).addScaledVector(frame.normal, offset);
-  if (object.parent) object.position.copy(object.parent.worldToLocal(worldPosition));
-  else object.position.copy(worldPosition);
-  object.updateMatrixWorld(true);
+  const parts = [object];
+  if (container !== object && object.parent === container
+      && /^GEO-v57-WallDisplay_board_photo_\d{2}$/i.test(container?.name || "")
+      && object.material?.name === container.name.replace(/^GEO-/, "MAT-")
+      && container.children.filter((child) => child.material?.name === object.material.name).length === 1
+      && object.geometry.attributes.position?.count === 4 && object.geometry.index?.count === 6) {
+    const sides = container.children.filter((child) => child.isMesh
+      && child.material?.name === "MAT-v57-WallDisplay_PaperSides"
+      && child.geometry.attributes.position?.count === 20 && child.geometry.index?.count === 30);
+    if (sides.length === 1) parts.push(sides[0]);
+  }
+  // Pins share the authored parent, so translate only the verified card parts.
+  for (const part of parts) {
+    const worldPosition = part.getWorldPosition(new THREE.Vector3()).addScaledVector(frame.normal, offset);
+    if (part.parent) part.position.copy(part.parent.worldToLocal(worldPosition));
+    else part.position.copy(worldPosition);
+    part.updateMatrixWorld(true);
+  }
   object.renderOrder = 20 + layer;
   const materials = Array.isArray(object.material) ? object.material : [object.material];
   materials.forEach((material) => {
@@ -159,7 +173,7 @@ export async function applyPhotos(root, bindings, renderer, onProgress) {
     if (replaced) {
       report.applied.push({ object: binding.object, url: binding.url, fit: binding.fit || "cover" });
       if (/WallDisplay_board_photo_\d{2}$/i.test(binding.object)) {
-        const depth = stabilizeCollageDepth(object, root, bindingIndex);
+        const depth = stabilizeCollageDepth(object, container, root, bindingIndex);
         if (depth) report.depthStabilized.push(depth);
       }
     }

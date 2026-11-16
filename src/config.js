@@ -8,11 +8,15 @@ export const CONTENT = {
   galaxy: "https://daoyi2026.github.io/Moonrise/",
 };
 
+const UPDATED_COLLAGE_PHOTOS = { 1: "01", 3: "02", 5: "07", 6: "08", 9: "04", 10: "snow-sheep-v2", 11: "05" };
+
 export const PHOTO_BINDINGS = [
   ...Array.from({ length: 14 }, (_, i) => ({
     object: `GEO-v57-WallDisplay_board_photo_${String(i + 1).padStart(2, "0")}`,
     material: new RegExp(`board_photo_${String(i + 1).padStart(2, "0")}$`, "i"),
-    url: `./public/assets/photos/red-${String(i + 1).padStart(2, "0")}.jpg`,
+    url: UPDATED_COLLAGE_PHOTOS[i + 1]
+      ? `./public/assets/photos/room-update-20261116/photo-${UPDATED_COLLAGE_PHOTOS[i + 1]}.jpg`
+      : `./public/assets/photos/red-${String(i + 1).padStart(2, "0")}.jpg`,
   })),
   { object: "GEO-v57-WallDisplay_top_fox_art", material: /top_fox_art$/i, url: "./public/assets/photos/green-01.jpg" },
   { object: "GEO-v57-WallDisplay_top_bird_upper", material: /top_bird_upper$/i, url: "./public/assets/photos/green-02.jpg", fit: "contain", inset: .94 },
@@ -20,7 +24,7 @@ export const PHOTO_BINDINGS = [
   { object: "GEO-v57-WallDisplay_top_ocean_poster", material: /top_ocean_poster$/i, url: "./public/assets/photos/green-04.jpg" },
   { object: "GEO-v57-WallDisplay_board_center_portrait", material: /board_center_portrait$/i, url: "./public/assets/photos/green-05.jpg" },
   { object: "GEO-v57-WallDisplay_board_dancer_upper", material: /board_dancer_upper$/i, url: "./public/assets/photos/green-06.jpg" },
-  { object: "GEO-v57-WallDisplay_board_dancer_lower", material: /board_dancer_lower$/i, url: "./public/assets/photos/green-07.jpg" },
+  { object: "GEO-v57-WallDisplay_board_dancer_lower", material: /board_dancer_lower$/i, url: "./public/assets/photos/room-update-20261116/photo-03.jpg" },
 ];
 
 export const REGION_PATTERNS = {
