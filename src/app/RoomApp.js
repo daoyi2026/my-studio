@@ -280,6 +280,8 @@ export class RoomApp {
       && paper?.isMesh && paper.geometry.getAttribute("position")?.count === 24 && paper.geometry.index?.count === 36
       && !Array.isArray(material) && material?.isMeshStandardMaterial && material.name === "MAT-v63-Paper_White"
       ? material : null;
+    this.artworkPaperPrint = null;
+    this.artworkPaperBrightness = null;
     this.drawingPaper?.traverse((object) => {
       if (!object.isMesh || object.geometry.getAttribute("uv")) return;
       object.geometry = object.geometry.clone();
@@ -414,23 +416,35 @@ export class RoomApp {
           material.needsUpdate = true;
           return material;
         }
-        // The accepted single-purpose paper keeps its own PBR response. An
-        // unlit print stayed white even when its practical lamp was off.
-        const print = object === this.drawingPaper && material === this.artworkPaperLightingSource
-          ? material.clone()
-          : new THREE.MeshBasicMaterial({
+        const print = new THREE.MeshBasicMaterial({
           map: texture,
           color: 0xffffff,
           side: material.side,
           toneMapped: false,
         });
-        print.map = texture;
         print.name = `${material.name || "DrawingPaper"}-PortfolioPrint`;
         print.userData.portfolioPrint = true;
+        if (object === this.drawingPaper && material === this.artworkPaperLightingSource) {
+          this.artworkPaperPrint = print;
+          this.artworkPaperBrightness = null;
+        }
         return print;
       });
       object.material = Array.isArray(object.material) ? next : next[0];
     });
+    this.updateArtworkPaperBrightness();
+  }
+
+  updateArtworkPaperBrightness() {
+    if (!this.artworkPaperPrint || !this.lights) return;
+    const day = THREE.MathUtils.clamp(this.lights.modeBlend, 0, 1);
+    const lamp = THREE.MathUtils.clamp(this.lights.lampBlend.drawing, 0, 1);
+    // Preserve the original print at full daylight or lamp brightness; only
+    // dim it when both existing light blends are below their full endpoints.
+    const brightness = .025 + .975 * (1 - (1 - day) * (1 - lamp));
+    if (brightness === this.artworkPaperBrightness) return;
+    this.artworkPaperPrint.color.setRGB(brightness, brightness, brightness);
+    this.artworkPaperBrightness = brightness;
   }
 
   bindArtworkControls() {
@@ -1219,6 +1233,7 @@ export class RoomApp {
     if (this.interactions) this.interactions.update();
     this.updateMotion(elapsed);
     this.lights.update(delta);
+    this.updateArtworkPaperBrightness();
     // A global orthographic view enters a screen through `projectionTween`,
     // not `tween`. Mounting the flattened input overlay during that hybrid
     // transition freezes its first, tiny CSS3D rectangle and leaves a large
