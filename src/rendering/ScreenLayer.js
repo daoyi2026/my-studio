@@ -297,6 +297,7 @@ export class ScreenLayer extends EventTarget {
   }
 
   startContent(kind) {
+    if (kind === "phone") return;
     const screen = this.screens[kind];
     if (!screen || screen.contentStarted) return;
     screen.contentStarted = true;

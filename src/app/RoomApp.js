@@ -4,7 +4,7 @@ import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../
 import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=18";
 import { applyPhotos } from "../assets/applyPhotos.js?v=12";
 import { CameraDirector } from "../camera/CameraDirector.js?v=17";
-import { ScreenLayer } from "../rendering/ScreenLayer.js?v=26";
+import { ScreenLayer } from "../rendering/ScreenLayer.js?v=27";
 import { LightDirector } from "../lighting/LightDirector.js?v=9";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
 import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=4";
@@ -17,6 +17,7 @@ import { submitFeltNote } from "../content/submitNote.js?v=2";
 import { loadWritingFeed, writingFeedTemplate } from "../content/writingFeed.js?v=2";
 import { applyNotebookPages } from "../content/notebookPages.js?v=7";
 import { applyNotebookPen } from "../assets/applyNotebookPen.js?v=1";
+import { hidePhone } from "../assets/hidePhone.js?v=1";
 
 const INTRO_LINE_ART_URL = "./public/assets/intro/room-line-art-native-grouped-v14-sketch-v5.svg?rev=production-clean-wall-v5";
 function viewportSize() {
@@ -215,6 +216,7 @@ export class RoomApp {
     this.screens.addEventListener("outsideclick", () => this.interactions.exitActive());
     this.cameraDirector.addEventListener("viewchange", (event) => this.updateViewUI(event.detail));
     this.resize();
+    hidePhone(this.room, this.scene, this.screens, this.contactShadows);
   }
 
   configureShelfLevels() {

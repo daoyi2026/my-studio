@@ -72,7 +72,7 @@ const config = await readFile(new URL("src/config.js", root), "utf8");
 assert.ok(config.includes("./public/model/myroom-studio-v1.glb?rev=4ce10f1b"), "Accepted model is the production default");
 assert.ok(config.includes("https://daoyi2026.github.io/Moonrise/") && config.includes('macbook: "https://daoyi2026.github.io/"'));
 const index = await readFile(new URL("index.html", root), "utf8");
-assert.ok(index.includes("./src/main.js?v=130") && index.includes("data-intro-line-art"));
+assert.ok(index.includes("./src/main.js?v=131") && index.includes("data-intro-line-art"));
 assert.ok(index.includes('href="mailto:rendaoyi@outlook.com"'));
 const lighting = await readFile(new URL("src/lighting/StaticOcclusionSample.js", root), "utf8");
 assert.ok(lighting.includes("./public/assets/lighting/r7/") && lighting.includes(modelHash));
