@@ -7,7 +7,7 @@ import { CameraDirector } from "../camera/CameraDirector.js?v=18";
 import { ScreenLayer } from "../rendering/ScreenLayer.js?v=29";
 import { LightDirector } from "../lighting/LightDirector.js?v=11";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
-import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=6";
+import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=7";
 import { InteractionDirector } from "../interaction/InteractionDirector.js?v=34";
 import { IntroLoader } from "../intro/IntroLoader.js?v=23";
 import { Cursor } from "../ui/Cursor.js?v=4";

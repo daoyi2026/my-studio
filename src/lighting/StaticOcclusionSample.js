@@ -23,7 +23,7 @@ export async function applyStaticOcclusionSample(room, modelUrl) {
   const sourceSha = compatibleSha;
   const version = "r7-ao-phone-free-v1";
   try {
-    const manifest = await (await checkedFetch(`${base}manifest.json`)).json();
+    const manifest = await (await checkedFetch(`${base}manifest.json?rev=a09a008b`)).json();
     requireContract(manifest.version === version && manifest.sourceSha256 === sourceSha, "manifest identity");
     requireContract(await sha256(await (await checkedFetch(modelUrl)).arrayBuffer()) === compatibleSha, "compatible GLB SHA-256");
     requireContract(manifest.receivers.length === 10 && new Set(manifest.receivers.map((r) => r.name)).size === 10, "receiver set");
