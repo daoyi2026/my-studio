@@ -326,13 +326,7 @@ export class IntroLoader {
     });
     this.renderDebug();
     this.setProgress(0);
-    this.resizeHandler = () => {
-      const svg = this.lineArtHost.querySelector("svg[data-intro-camera]");
-      if (svg) {
-        this.fitSvgToViewport(svg);
-        this.syncPathDashMetrics();
-      }
-    };
+    this.resizeHandler = () => this.resize();
     window.addEventListener("resize", this.resizeHandler, { passive: true });
   }
 
@@ -685,6 +679,14 @@ export class IntroLoader {
     return svg;
   }
 
+  resize() {
+    const svg = this.lineArtHost.querySelector("svg[data-intro-camera]");
+    if (svg) {
+      this.fitSvgToViewport(svg);
+      this.syncPathDashMetrics();
+    }
+  }
+
   fitSvgToViewport(svg) {
     if (!svg?.dataset.introCamera) return;
     const widthExtent = Number(svg.dataset.introCameraWidthExtent);
@@ -695,7 +697,10 @@ export class IntroLoader {
     const hostHeight = this.lineArtHost.clientHeight || window.innerHeight;
     if (!hostWidth || !hostHeight) return;
     const aspect = hostWidth / hostHeight;
-    const halfHeight = Math.max(
+    // Once the host camera exists, follow its actual projection. Refitting
+    // independently after a resize would scale the drawing away from the room.
+    const cameraHalfHeight = Number(this.options.getCameraHalfHeight?.());
+    const halfHeight = Number.isFinite(cameraHalfHeight) && cameraHalfHeight > 0 ? cameraHalfHeight : Math.max(
       heightExtent / (2 * fill),
       widthExtent / (2 * aspect * fill),
     );

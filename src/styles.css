@@ -156,43 +156,40 @@ button { border: 0; }
 .artwork-controls output { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .artwork-page-status { position: absolute; left: 50%; bottom: max(28px, env(safe-area-inset-bottom)); margin: 0; padding: 5px 8px; border-radius: 6px; background: var(--ui-surface); color: var(--ui-copy); font-size: 10px; white-space: nowrap; transform: translateX(-50%); }
 .note-compose-card { padding: 0; overflow: hidden; box-shadow: none; }
-.note-form { position: relative; }
+.note-form { position: relative; display: grid; }
 .note-fields { display: grid; gap: 13px; padding: 18px 22px 0; }
 .note-fields label { display: grid; gap: 5px; color: var(--panel-muted); font-size: 10px; line-height: 1.5; }
 .note-fields input { width: 100%; min-width: 0; padding: 4px 0 7px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--panel-copy) 18%, transparent); border-radius: 0; outline: 0; color: var(--panel-copy); background: transparent; font: 13px/1.5 Georgia, "Songti SC", serif; }
 .note-fields input::placeholder { color: var(--panel-muted); opacity: .78; }
 .note-fields input:focus { border-color: var(--panel-copy); }
 .note-fields input[aria-invalid="true"] { border-color: var(--panel-copy); }
-.note-form textarea { display: block; width: 100%; min-height: 126px; resize: vertical; border: 0; outline: 0; border-radius: inherit; padding: 20px 22px 48px; color: var(--panel-copy); background: transparent; font: 16px/1.55 Georgia, "Songti SC", serif; }
+.note-form textarea { display: block; width: 100%; min-height: 126px; resize: vertical; border: 0; outline: 0; border-radius: inherit; padding: 20px 22px 12px; color: var(--panel-copy); background: transparent; font: 16px/1.55 Georgia, "Songti SC", serif; scrollbar-width: none; }
 .note-form textarea::placeholder { color: var(--panel-muted); opacity: .78; }
-.note-form button { position: absolute; right: 15px; bottom: 13px; display: inline-flex; gap: 6px; align-items: center; padding: 5px 8px; border-radius: 7px; color: var(--panel-muted); background: transparent; border: 1px solid color-mix(in srgb, var(--panel-copy) 15%, transparent); cursor: none; font: 9px/1.2 Georgia, serif; letter-spacing: .08em; text-transform: lowercase; }
+.note-form button { position: static; justify-self: end; margin: 4px 15px 13px; display: inline-flex; gap: 6px; align-items: center; padding: 5px 8px; border-radius: 7px; color: var(--panel-muted); background: transparent; border: 1px solid color-mix(in srgb, var(--panel-copy) 15%, transparent); cursor: none; font: 9px/1.2 Georgia, serif; letter-spacing: .08em; text-transform: lowercase; }
 .note-form button:hover { color: var(--panel-copy); background: color-mix(in srgb, var(--panel-copy) 6%, transparent); }
 .note-form button:disabled { opacity: .55; }
 .note-delivery-notice, .note-submit-status { margin: 0; padding: 0 22px 12px; color: var(--panel-muted) !important; font-size: 9px; line-height: 1.5; }
 .note-submit-status:empty { display: none; }
 .note-form button span { font: 13px/1 sans-serif; }
-.note-cloud { position: relative; min-height: calc(98px + (var(--note-rows, 1) - 1) * 68px); margin: -5px 7px 0; padding-top: 8px; }
-.note-cloud > .panel-eyebrow { margin: 0 0 3px 5px; text-shadow: 0 1px 10px rgba(20,20,18,.15); }
-.note-list { position: relative; min-height: calc(82px + (var(--note-rows, 1) - 1) * 68px); }
-.note-list small { color: var(--panel-muted); font-size: 10px; }
-.note-paper { position: absolute; z-index: var(--note-z); left: var(--note-x); top: var(--note-y); width: 68px; padding: 9px 8px; border: 0; color: #4b4a42; box-shadow: 0 7px 15px rgba(40,37,25,.12); cursor: none; text-align: left; transform: rotate(var(--note-r)) scale(var(--note-scale)); transform-origin: 50% 25%; transition: transform .2s ease, box-shadow .2s ease, z-index 0s; }
-.note-paper:hover { z-index: 9; transform: rotate(0) translateY(-5px) scale(calc(var(--note-scale) + .08)); box-shadow: 0 12px 22px rgba(40,37,25,.18); }
-.note-paper span { display: -webkit-box; overflow: hidden; font: 10px/1.42 Georgia, "Songti SC", serif; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
-.note-paper--shape-0 { width: 64px; aspect-ratio: 1/1; }
-.note-paper--shape-1 { width: 56px; aspect-ratio: 3/4; }
-.note-paper--shape-2 { width: 78px; aspect-ratio: 4/3; }
-.note-paper--color-0 { background: #f8e79a; }
-.note-paper--color-1 { background: #d8e5c0; }
-.note-paper--color-2 { background: #e8c8bd; }
-.note-viewer { position: absolute; z-index: 8; inset: 0; display: grid; place-items: center; min-height: 100%; }
+/* Keep handwriting consistent across the salutation, body and signature. */
+.note-viewer { position: relative; z-index: 8; display: block; max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain; padding: 12px; scrollbar-width: none; }
+.note-form textarea::-webkit-scrollbar, .note-viewer::-webkit-scrollbar { width: 0; height: 0; background: transparent; }
 .note-viewer[hidden] { display: none; }
-.note-viewer article { position: relative; z-index: 1; display: grid; place-items: center; width: min(270px, 76vw); min-height: 220px; padding: 34px; color: #45443d; background: #f8e79a; box-shadow: 0 26px 70px rgba(31,29,23,.3); transform: rotate(-1deg); }
-.note-viewer article.note-paper--shape-1 { width: min(220px, 64vw); min-height: 290px; }
-.note-viewer article.note-paper--shape-2 { width: min(320px, 82vw); min-height: 200px; }
+.interaction-panel[data-kind="felt-note"] { position: fixed; max-height: none; }
+.interaction-panel[data-kind="felt-note"] .note-compose-card,
+.interaction-panel[data-kind="felt-note"] > .panel-close { display: none; }
+.interaction-panel[data-kind="felt-note"] .panel-content { display: block; padding: 0; overflow: visible; max-height: none; }
+.note-viewer article { position: relative; display: flex; flex-direction: column; gap: 24px; width: min(270px, 100%); min-height: 220px; height: auto; aspect-ratio: auto; margin: 0 auto; padding: 26px 28px 28px; color: #45443d; background: #f8e79a; box-shadow: 0 26px 70px rgba(31,29,23,.3); transform: rotate(-1deg); font-family: "HanziPen SC", "Kaiti SC", "KaiTi", "STKaiti", "Segoe Print", "Bradley Hand", cursive; }
+.note-viewer article.note-paper--shape-1 { width: min(220px, 100%); min-height: 290px; }
+.note-viewer article.note-paper--shape-2 { width: min(320px, 100%); min-height: 200px; }
 .note-viewer article.note-paper--color-1 { background: #d8e5c0; }
 .note-viewer article.note-paper--color-2 { background: #e8c8bd; }
-.note-viewer article p { margin: 0; color: inherit; font: 18px/1.65 Georgia, "Songti SC", serif; white-space: pre-wrap; }
+.note-viewer article p { flex: 1; margin: 0; color: inherit; font-family: inherit; font-size: 18px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-to { align-self: flex-start; padding-right: 24px; font-size: 13px; line-height: 1.4; letter-spacing: .04em; }
+.note-signature { align-self: stretch; color: inherit; text-align: right; font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
 .note-viewer-close { position: absolute; right: 10px; top: 8px; width: 28px; height: 28px; color: inherit; background: transparent; font-size: 20px; cursor: none; }
+.note-viewer-close:focus { outline: none; }
+.note-viewer-close:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
 
 .loader { position: absolute; z-index: 100; inset: 0; display: grid; place-items: center; background: #101110; transition: opacity .9s ease, visibility .9s; }
 .loader.is-done { opacity: 0; visibility: hidden; pointer-events: none; }

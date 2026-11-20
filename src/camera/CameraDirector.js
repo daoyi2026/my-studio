@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CAMERA } from "../config.js?v=20";
+import { CAMERA } from "../config.js?v=8";
 import { fitDistance, frameExtents, poseForBox, surfaceFrame } from "../utils/geometry.js";
 
 const ease = (t) => t * t * t * (t * (t * 6 - 15) + 10);
@@ -103,9 +103,13 @@ export class CameraDirector extends EventTarget {
     this.perspectiveCamera.updateProjectionMatrix();
     this.orthographicCamera.aspect = aspect;
     this.updateOrthographicProjection();
+    const lens = this.camera.userData.projectionBlend;
+    if (lens) this.updateProjectionBlend(lens.halfHeight, lens.alpha, lens.distance);
   }
 
   apply(pose) {
+    this.tween = this.projectionTween = null;
+    delete this.camera.userData.projectionBlend;
     this.activateCamera(pose.projection || "perspective", { matchView: true });
     this.camera.position.copy(pose.position);
     this.camera.up.copy(pose.up);
@@ -159,6 +163,9 @@ export class CameraDirector extends EventTarget {
     }
     this.projectionTween = null;
     this.noteInput();
+    if (this.camera.isPerspectiveCamera && (pose.projection === "orthographic" || this.camera.userData.projectionBlend)) {
+      return this.beginProjectionBlend(pose, { level, region, duration });
+    }
     if (this.camera.isOrthographicCamera && (pose.projection || "perspective") === "perspective") {
       this.beginHybridDolly(pose, { level, region, duration });
       return true;
@@ -205,6 +212,52 @@ export class CameraDirector extends EventTarget {
     this.region = region;
     this.controls.enabled = false;
     this.dispatchEvent(new CustomEvent("viewchange", { detail: { level, region, label: pose.label } }));
+  }
+
+  beginProjectionBlend(pose, { level, region, duration }) {
+    this.discardControlInertia();
+    const camera = this.camera, lens = camera.userData.projectionBlend;
+    const distance = camera.position.distanceTo(this.controls.target);
+    const from = { position: camera.position.clone(), target: this.controls.target.clone(), up: camera.up.clone(), near: camera.near,
+      halfHeight: lens?.halfHeight ?? distance * Math.tan(THREE.MathUtils.degToRad(camera.fov) * .5), alpha: lens?.alpha ?? 1 };
+    const orthographic = pose.projection === "orthographic";
+    const toPosition = pose.position.clone();
+    if (orthographic && level === "global") {
+      // OrbitControls also clamps orthographic camera radius. Approach the
+      // accepted, clamped home pose rather than jumping there on its last update.
+      const offset = pose.position.clone().sub(pose.target);
+      const maxDistance = pose.orthographicHalfHeight / Math.tan(THREE.MathUtils.degToRad(CAMERA.localFov) * .5);
+      offset.clampLength(this.controls.minDistance, maxDistance);
+      toPosition.copy(pose.target).add(offset);
+    }
+    this.tween = null;
+    this.projectionTween = { lensBlend: true, start: performance.now(), duration, from, to: pose,
+      toPosition,
+      toAlpha: orthographic ? 0 : 1,
+      toHalfHeight: orthographic ? pose.orthographicHalfHeight : pose.position.distanceTo(pose.target) * Math.tan(THREE.MathUtils.degToRad(pose.fov ?? CAMERA.localFov) * .5) };
+    this.level = level; this.region = region;
+    this.controls.enabled = false;
+    this.dispatchEvent(new CustomEvent("viewchange", { detail: { level, region, label: pose.label } }));
+    return true;
+  }
+
+  updateProjectionBlend(halfHeight, alpha, distance) {
+    const camera = this.camera, near = camera.near, far = camera.far;
+    const p = alpha / distance, q = 1 - alpha;
+    // w = q - p*z: alpha 1 is perspective, alpha 0 is orthographic.
+    // Normalize positive-alpha matrices to P[11] = -1 for Three's
+    // perspective-matrix shader detection; homogeneous projection is unchanged.
+    if (p > 0) {
+      const shift = q / p;
+      camera.projectionMatrix.set(1 / (halfHeight * p * this.aspect), 0, 0, 0,
+        0, 1 / (halfHeight * p), 0, 0,
+        0, 0, -(2 * shift + far + near) / (far - near), -(shift * (far + near) + 2 * far * near) / (far - near),
+        0, 0, -1, shift);
+    } else {
+      camera.projectionMatrix.makeOrthographic(-halfHeight * this.aspect, halfHeight * this.aspect, halfHeight, -halfHeight, near, far);
+    }
+    camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+    camera.userData.projectionBlend = { halfHeight, alpha, distance };
   }
 
   goGlobal(options = {}) {
@@ -366,13 +419,38 @@ export class CameraDirector extends EventTarget {
   }
 
   updateGlobalLens() {
-    if (this.level !== "global" || this.tween || !this.camera.isPerspectiveCamera) return;
+    if (this.level !== "global" || this.tween || this.projectionTween || !this.camera.isPerspectiveCamera) return;
     if (Math.abs(this.camera.fov - CAMERA.localFov) < .005) return;
     this.camera.fov = CAMERA.localFov;
     this.camera.updateProjectionMatrix();
   }
 
   update(now) {
+    if (this.projectionTween?.lensBlend) {
+      const tween = this.projectionTween, raw = Math.min(1, (now - tween.start) / tween.duration), t = ease(raw);
+      this.camera.position.lerpVectors(tween.from.position, tween.toPosition, t);
+      this.controls.target.lerpVectors(tween.from.target, tween.to.target, t);
+      this.camera.up.lerpVectors(tween.from.up, tween.to.up || tween.from.up, t).normalize();
+      this.camera.near = THREE.MathUtils.lerp(tween.from.near, tween.to.near ?? tween.from.near, t);
+      this.camera.lookAt(this.controls.target);
+      const distance = this.camera.position.distanceTo(this.controls.target);
+      const halfHeight = THREE.MathUtils.lerp(tween.from.halfHeight, tween.toHalfHeight, t);
+      this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(halfHeight / distance));
+      this.updateProjectionBlend(halfHeight, THREE.MathUtils.lerp(tween.from.alpha, tween.toAlpha, t), distance);
+      if (raw === 1) {
+        delete this.camera.userData.projectionBlend;
+        this.activateCamera(tween.to.projection || "perspective");
+        this.camera.position.copy(tween.toPosition); this.controls.target.copy(tween.to.target);
+        this.camera.up.copy(tween.to.up || this.camera.up); this.camera.lookAt(this.controls.target);
+        if (this.camera.isOrthographicCamera) this.updateOrthographicProjection(tween.toHalfHeight);
+        else { this.camera.fov = tween.to.fov ?? CAMERA.localFov; this.camera.updateProjectionMatrix(); }
+        this.currentPose = tween.to; this.projectionTween = null;
+        this.configureControlEnvelope(this.level, this.currentPose);
+        this.controls.enabled = this.level !== "interaction";
+        return true;
+      }
+      return;
+    }
     if (this.projectionTween) {
       const raw = Math.min(1, (now - this.projectionTween.start) / this.projectionTween.duration);
       const tween = this.projectionTween;
@@ -413,7 +491,9 @@ export class CameraDirector extends EventTarget {
         this.projectionTween = null;
         this.configureControlEnvelope(this.level, this.currentPose);
         this.controls.enabled = true;
-        this.controls.update();
+        // RoomApp owns the single per-frame controls update, including this
+        // handoff when the resulting interaction keeps manual input disabled.
+        return true;
       }
       return;
     }
@@ -439,7 +519,7 @@ export class CameraDirector extends EventTarget {
         this.tween = null;
         this.configureControlEnvelope(this.level, this.currentPose);
         this.controls.enabled = this.level !== "interaction";
-        if (this.controls.enabled) this.controls.update();
+        return this.controls.enabled;
       }
       return;
     }

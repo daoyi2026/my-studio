@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CSS3DObject, CSS3DRenderer } from "three/addons/renderers/CSS3DRenderer.js";
-import { CONTENT } from "../config.js?v=20";
+import { CONTENT } from "../config.js?v=24";
 
 // Keep CSS geometry in pixel-sized units. Meter-sized sibling iframe planes
 // can be incorrectly clipped by Chromium's 3D compositor at oblique views.
@@ -163,6 +163,7 @@ export class ScreenLayer extends EventTarget {
   configure(room) {
     room.updateMatrixWorld(true);
     for (const [kind, contract] of Object.entries(CONTRACTS)) {
+      if (kind === "phone" && room.userData.phoneFreeContract) continue;
       const frame = contractFrame(room, contract.prefix);
       if (!frame) {
         console.warn(`[screen] Missing ${contract.prefix} screen contract`);
@@ -352,8 +353,12 @@ export class ScreenLayer extends EventTarget {
   setTransitioning(kind, sceneMoving = false) {
     const next = kind && this.screens[kind] ? kind : null;
     if (next === this.transitionKind && sceneMoving === this.sceneMoving) return;
+    const inactiveDesktop = !next && !this.transitionKind && !this.mobileCompositing
+      && !this.activeKind && !this.overlayKind && !this.pendingInteractiveKind
+      && Object.values(this.screens).length > 0 && Object.values(this.screens).every((screen) => screen.contentReady);
     this.transitionKind = next;
     this.sceneMoving = sceneMoving;
+    if (inactiveDesktop) return;
     this.applyScreenVisibility();
     if (!next) this.render(true);
   }
@@ -468,6 +473,7 @@ export class ScreenLayer extends EventTarget {
   resize(width, height) { this.renderer.setSize(width, height); this.cameraState = null; }
 
   cssRenderCamera(camera) {
+    if (camera.userData.projectionBlend) return this.cssProjectionBlendCamera(camera);
     let copy = this.renderCameras.get(camera);
     if (!copy) {
       copy = camera.clone(false);
@@ -488,6 +494,49 @@ export class ScreenLayer extends EventTarget {
     }
     copy.projectionMatrixInverse.copy(copy.projectionMatrix).invert();
     copy.updateMatrixWorld(true);
+    return copy;
+  }
+
+  cssProjectionBlendCamera(camera) {
+    const { alpha, distance, halfHeight } = camera.userData.projectionBlend;
+    const p = alpha / distance, q = 1 - alpha, size = this.renderer.getSize();
+    this.blendRenderCameras ||= new WeakMap();
+    let copies = this.blendRenderCameras.get(camera);
+    if (!copies) {
+      copies = { perspective: new THREE.PerspectiveCamera(), orthographic: new THREE.OrthographicCamera(), point: new THREE.Vector3() };
+      this.blendRenderCameras.set(camera, copies);
+    }
+    // A finite virtual eye is exactly equivalent while p>0. Very close to
+    // orthographic, use the finite physical pose only after every screen corner
+    // is within 0.1 CSS pixel, avoiding enormous CSS compositor transforms.
+    let pixelError = Infinity;
+    if (alpha < .005) {
+      pixelError = 0;
+      for (const screen of Object.values(this.screens)) for (const x of [-1, 1]) for (const y of [-1, 1]) {
+        const point = copies.point.copy(screen.frame.center).addScaledVector(screen.frame.right, x * screen.frame.width * .5)
+          .addScaledVector(screen.frame.up, y * screen.frame.height * .5).applyMatrix4(camera.matrixWorldInverse);
+        const w = q - p * point.z;
+        if (w <= 0) { pixelError = Infinity; continue; }
+        pixelError = Math.max(pixelError, Math.abs(point.x / (halfHeight * camera.aspect) * (1 / w - 1)) * size.width * .5,
+          Math.abs(point.y / halfHeight * (1 / w - 1)) * size.height * .5);
+      }
+    }
+    const orthographic = alpha === 0 || pixelError < .1;
+    const copy = orthographic ? copies.orthographic : copies.perspective;
+    camera.matrixWorld.decompose(copy.position, copy.quaternion, copy.scale);
+    copy.up.copy(camera.up); copy.layers.mask = camera.layers.mask; copy.view = camera.view;
+    if (orthographic) {
+      copy.left = -halfHeight * camera.aspect * CSS_WORLD_SCALE; copy.right = -copy.left;
+      copy.top = halfHeight * CSS_WORLD_SCALE; copy.bottom = -copy.top;
+      copy.near = camera.near * CSS_WORLD_SCALE; copy.far = camera.far * CSS_WORLD_SCALE;
+    } else {
+      const shift = q / p;
+      copy.position.addScaledVector(copies.point.set(0, 0, 1).applyQuaternion(copy.quaternion), shift);
+      copy.fov = THREE.MathUtils.radToDeg(2 * Math.atan(halfHeight * p)); copy.aspect = camera.aspect;
+      copy.near = (camera.near + shift) * CSS_WORLD_SCALE; copy.far = (camera.far + shift) * CSS_WORLD_SCALE;
+    }
+    copy.position.multiplyScalar(CSS_WORLD_SCALE);
+    copy.updateProjectionMatrix(); copy.updateMatrixWorld(true);
     return copy;
   }
 

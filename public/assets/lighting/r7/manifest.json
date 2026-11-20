@@ -1,7 +1,7 @@
 {
-  "version": "r7-ao-desk-vintage-v01",
+  "version": "r7-ao-phone-free-v1",
   "technique": "Exact GLB world-space BVH, deterministic cosine-weighted hemisphere, distance-weighted static AO; not GI or direct lighting",
-  "sourceSha256": "4ce10f1bb16cfe7fe89f90e25c171635f3392e2801e49fcbd6911f3a5baaf547",
+  "sourceSha256": "a09a008b7b9298edddacba4994755fa1ada00f02ad660b0221e1628d29fb9666",
   "texture": "atlas.png",
   "textureSha256": "8930c236593ac5583188f0c224ffda25c15935d4c065bb7d9d758bf1beedd138",
   "textureBytes": 146478,
@@ -542,7 +542,6 @@
     "GEO-v62-Camera-Leica_28_Cylinder_144",
     "GEO-v62-Camera-Leica_30_Cube_565",
     "GEO-v62-Camera-Leica_36_Cube_145",
-    "REPL-v63-phone-001",
     "Sphere.001",
     "Sphere.002",
     "lamp 180"
@@ -4236,5 +4235,11 @@
     "nodePrefix": "GEO-DESKREVIEW-microphone-",
     "reason": "Static accepted desk microphone; legacy phone substring exclusion would otherwise omit its opaque geometry.",
     "defaultExclusionsUnchanged": true
+  },
+  "compatibilityProof": {
+    "sourceManifest": "r7-ao-desk-vintage-v01",
+    "reason": "Only phone geometry removed; original static bake already excluded phone occluders. All ten receiver positions, indices and world matrices remain exact.",
+    "receiverProof": "../cpu-validation.json",
+    "atlasUnchanged": true
   }
 }

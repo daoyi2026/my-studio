@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { objectPath } from "../assets/loadRoom.js?v=18";
-import { BOOK_INDEX_BY_MODEL_ID } from "../content/roomContent.js?v=6";
+import { BOOK_INDEX_BY_MODEL_ID } from "../content/roomContent.js";
 
 export const RULES = [
   { id: "imac", label: "iMac · 个人官网", pattern: /AGREED_iMac/i, region: "desk", screen: "imac" },
@@ -39,6 +39,7 @@ function isDrawingLampPart(object) {
 }
 
 function ruleFor(object) {
+  if (Number.isInteger(object.userData.localFeltNoteIndex)) return { ...RULES.find(rule => rule.id === "felt"), localFeltNoteIndex: object.userData.localFeltNoteIndex };
   const path = objectPath(object);
   // Only the felt board and its overlapping board_* papers share this target.
   // Decorative top_* posters remain ordinary desk-region hits.
@@ -109,7 +110,7 @@ export class InteractionDirector {
   }
 
   move(event) {
-    if (this.cameraDirector.tween) return;
+    if (this.cameraDirector.tween || this.cameraDirector.projectionTween) return;
     const hit = this.pick(event);
     let rule = hit ? ruleFor(hit.object) : null;
     const book = rule?.id === "book" ? matchingAncestor(hit.object, /Books-Layer/i, this.room) : null;
@@ -139,13 +140,14 @@ export class InteractionDirector {
   up(event) {
     const down = this.pointerDown;
     this.pointerDown = null;
-    if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 6 || this.cameraDirector.tween) return;
+    if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 6 || this.cameraDirector.tween || this.cameraDirector.projectionTween) return;
     this.cameraDirector.noteInput();
     const hit = this.pick(event);
     if (!hit) return this.handleBlank();
     let rule = ruleFor(hit.object);
     const book = rule?.id === "book" ? matchingAncestor(hit.object, /Books-Layer/i, this.room) : null;
     if (book && !Number.isInteger(BOOK_INDEX_BY_MODEL_ID[book.name])) return;
+    if (Number.isInteger(rule?.localFeltNoteIndex)) return this.onPanel?.("felt", rule);
     if (rule?.direct) return this.handleDirect(rule);
     if (this.cameraDirector.level === "global") {
       if (rule?.portal) return this.onPortal(rule, this.resolve(rule, hit.object));

@@ -1,5 +1,18 @@
 // Preserve the original model bounds and the lights configured from its screen.
 // Remove phone presentation only after scene setup, before content can start.
+export function removedPhoneLightFrame(room) {
+  const contract = room.userData.phoneFreeContract;
+  if (!contract) return null;
+  const frame = contract.phoneLightFrame;
+  if (contract.version !== 1 || contract.sourceSha256 !== "4ce10f1bb16cfe7fe89f90e25c171635f3392e2801e49fcbd6911f3a5baaf547"
+    || room.getObjectByName("REPL-v63-phone-Group") || room.getObjectByName("PHONE_SCREEN_ROOT")
+    || !frame || ![frame.center, frame.normal].every((vector) => Array.isArray(vector) && vector.length === 3 && vector.every(Number.isFinite))
+    || ![frame.width, frame.height].every((value) => Number.isFinite(value) && value > 0)) {
+    throw new Error("Phone-free lighting contract unavailable");
+  }
+  return frame;
+}
+
 export function hidePhone(room, scene, screens, contactShadows) {
   const roots = [], helpers = [];
   room.traverse((node) => { if (node.name === "REPL-v63-phone-Group") roots.push(node); });

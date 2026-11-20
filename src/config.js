@@ -1,5 +1,5 @@
-// Public release: the user-accepted Vintage desk model is the default.
-export const MODEL_URL = "./public/model/myroom-studio-v1.glb?rev=4ce10f1b";
+// User-accepted phone-free production release.
+export const MODEL_URL = "./public/model/myroom-studio-v1.glb?rev=a09a008b";
 
 export const CONTENT = {
   imac: "https://rendaoyi.framer.ai/",

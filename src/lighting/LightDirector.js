@@ -47,6 +47,39 @@ function patchMaterial(color, texture) {
   });
 }
 
+function starSandTexture(cookie) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 768;
+  const context = canvas.getContext("2d");
+  // A single static texture keeps the night accent independent of frame rate.
+  const wash = context.createLinearGradient(0, 0, 0, canvas.height);
+  wash.addColorStop(0, "rgba(28,48,105,.64)");
+  wash.addColorStop(1, "rgba(81,154,196,.32)");
+  context.fillStyle = wash;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  let seed = 20261120;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let index = 0; index < 720; index++) {
+    const x = random() * canvas.width, y = random() * canvas.height;
+    const radius = index % 47 === 0 ? 2.1 : .55 + random() * 1.05;
+    context.fillStyle = `rgba(235,245,255,${.4 + random() * .6})`;
+    context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.fill();
+    if (index % 47 === 0) {
+      const halo = context.createRadialGradient(x, y, 0, x, y, 7);
+      halo.addColorStop(0, "rgba(206,229,255,.4)"); halo.addColorStop(1, "rgba(206,229,255,0)");
+      context.fillStyle = halo; context.fillRect(x - 7, y - 7, 14, 14);
+    }
+  }
+  // The original arch and window-bar mask also clip the star layer.
+  context.globalCompositeOperation = "destination-in";
+  context.drawImage(cookie.image, 0, 0, canvas.width, canvas.height);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
 function projectedOpeningGeometry(windowMesh, frame, direction, floorY, wallGap) {
   const source = windowMesh.geometry;
   const position = source.getAttribute("position");
@@ -227,8 +260,19 @@ export class LightDirector {
       group.add(glow);
       glow.rotation.set(0, 0, 0);
       glow.renderOrder = 11;
+      let stars = null;
+      if (!inside) {
+        stars = new THREE.Mesh(glow.geometry, new THREE.MeshBasicMaterial({
+          map: starSandTexture(cookie), transparent: true, opacity: 0,
+          depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+        }));
+        stars.name = "RUNTIME_WINDOW_STAR_SAND";
+        stars.position.y = .0003;
+        stars.renderOrder = 12;
+        group.add(stars);
+      }
       this.scene.add(group);
-      return { group, glow };
+      return { group, glow, stars };
     };
     this.rig.dayPatch = makePatch(true);
     this.rig.nightPatch = makePatch(false);
@@ -278,6 +322,10 @@ export class LightDirector {
     Object.values(this.rig.screenLights).forEach((light) => { light.intensity = THREE.MathUtils.lerp(.18, .02, day); });
     if (this.rig.dayPatch) this.rig.dayPatch.glow.material.opacity = .68 * day;
     if (this.rig.nightPatch) this.rig.nightPatch.glow.material.opacity = .78 * (1 - day);
+    if (this.rig.nightPatch?.stars) {
+      this.rig.nightPatch.stars.material.opacity = .62 * (1 - day);
+      this.rig.nightPatch.stars.visible = day < 1;
+    }
     this.renderer.toneMappingExposure = THREE.MathUtils.lerp(.78, .92, day);
     this.nightFog.density = THREE.MathUtils.lerp(.018, 0, day);
     this.scene.fog = this.nightFog;

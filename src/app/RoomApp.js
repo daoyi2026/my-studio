@@ -1,15 +1,15 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=22";
+import { CAMERA, CONTENT, MODEL_URL, PHOTO_BINDINGS, REGION_PATTERNS } from "../config.js?v=24";
 import { loadRoom, configureRoomMaterials, boxForPatterns } from "../assets/loadRoom.js?v=18";
 import { applyPhotos } from "../assets/applyPhotos.js?v=12";
-import { CameraDirector } from "../camera/CameraDirector.js?v=17";
-import { ScreenLayer } from "../rendering/ScreenLayer.js?v=27";
-import { LightDirector } from "../lighting/LightDirector.js?v=9";
+import { CameraDirector } from "../camera/CameraDirector.js?v=18";
+import { ScreenLayer } from "../rendering/ScreenLayer.js?v=29";
+import { LightDirector } from "../lighting/LightDirector.js?v=11";
 import { addContactShadows } from "../lighting/ContactShadowLayer.js";
-import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=4";
-import { InteractionDirector } from "../interaction/InteractionDirector.js?v=31";
-import { IntroLoader } from "../intro/IntroLoader.js?v=22";
+import { applyStaticOcclusionSample } from "../lighting/StaticOcclusionSample.js?v=6";
+import { InteractionDirector } from "../interaction/InteractionDirector.js?v=34";
+import { IntroLoader } from "../intro/IntroLoader.js?v=23";
 import { Cursor } from "../ui/Cursor.js?v=4";
 import { surfaceFrame } from "../utils/geometry.js";
 import { AWARDS, BOOKS, PLAYLIST, ROOM_LINKS } from "../content/roomContent.js?v=6";
@@ -17,7 +17,9 @@ import { submitFeltNote } from "../content/submitNote.js?v=2";
 import { loadWritingFeed, writingFeedTemplate } from "../content/writingFeed.js?v=2";
 import { applyNotebookPages } from "../content/notebookPages.js?v=7";
 import { applyNotebookPen } from "../assets/applyNotebookPen.js?v=1";
-import { hidePhone } from "../assets/hidePhone.js?v=1";
+import { hidePhone, removedPhoneLightFrame } from "../assets/hidePhone.js?v=2";
+import { applyStaticRoomBatches } from "../assets/staticRoomBatches.js?v=1";
+import { FELT_NOTES_KEY, createFeltNoteStore, createPhysicalFeltNotes, feltNoteMessage, feltNoteName } from "../content/feltNotes.js?v=8";
 
 const INTRO_LINE_ART_URL = "./public/assets/intro/room-line-art-native-grouped-v14-sketch-v5.svg?rev=production-clean-wall-v5";
 function viewportSize() {
@@ -35,6 +37,7 @@ export class RoomApp {
     this.screenHost = document.querySelector("#screen-layer");
     this.loading = new IntroLoader(document.querySelector("#loader"), {
       lineArtUrl: INTRO_LINE_ART_URL,
+      getCameraHalfHeight: () => this.cameraDirector?.home ? this.cameraDirector.orthographicHalfHeight : null,
     });
     this.cursor = new Cursor();
     this.clock = new THREE.Clock();
@@ -178,6 +181,7 @@ export class RoomApp {
 
   configureScene() {
     this.room.updateMatrixWorld(true);
+    const phoneLightFrame = removedPhoneLightFrame(this.room);
     this.roomBounds = new THREE.Box3().setFromObject(this.room);
     this.roomCenter = this.roomBounds.getCenter(new THREE.Vector3());
     this.cameraDirector.configure(this.roomBounds, this.roomCenter);
@@ -216,7 +220,11 @@ export class RoomApp {
     this.screens.addEventListener("outsideclick", () => this.interactions.exitActive());
     this.cameraDirector.addEventListener("viewchange", (event) => this.updateViewUI(event.detail));
     this.resize();
-    hidePhone(this.room, this.scene, this.screens, this.contactShadows);
+    this.staticBatches = applyStaticRoomBatches(this.room, this.lightingSample);
+    this.noteStore = createFeltNoteStore({ key: this.noteStorageKey || FELT_NOTES_KEY });
+    this.physicalFeltNotes = createPhysicalFeltNotes(this.room);
+    this.syncPhysicalNotes();
+    if (!phoneLightFrame) hidePhone(this.room, this.scene, this.screens, this.contactShadows);
   }
 
   configureShelfLevels() {
@@ -519,13 +527,14 @@ export class RoomApp {
     document.querySelector("#reset-view").addEventListener("click", () => this.cameraDirector.goGlobal());
     document.querySelector(".brand").addEventListener("click", (event) => { event.preventDefault(); this.cameraDirector.goGlobal(); });
     document.querySelectorAll("[data-light]").forEach((button) => button.addEventListener("click", () => this.toggleLight(button.dataset.light)));
-    const closePanel = () => this.interactions ? this.interactions.exitActive() : this.showPanel(null);
+    const closePanel = () => this.panel.dataset.kind === "felt-note" || !this.interactions
+      ? this.showPanel(null) : this.interactions.exitActive();
     this.panel.querySelector(".panel-close").setAttribute("aria-label", "Close panel");
     this.panel.querySelector(".panel-close").addEventListener("click", closePanel);
     this.panel.querySelector(".panel-backdrop").addEventListener("pointerdown", closePanel);
     addEventListener("keydown", (event) => {
       // Notebook text is read in 3D with no card, but keeps its existing exit key.
-      if (event.key === "Escape" && (!this.panel.hidden || this.interactions?.activeRule?.id === "notebook")) this.interactions?.exitActive();
+      if (event.key === "Escape" && (!this.panel.hidden || this.interactions?.activeRule?.id === "notebook")) closePanel();
     });
     addEventListener("message", (event) => {
       if (event.source !== this.galaxy?.contentWindow) return;
@@ -604,14 +613,17 @@ export class RoomApp {
     const templates = {
       trophy: this.trophyPanelTemplate(),
       music: this.musicPanelTemplate(),
-      felt: `<div class="media-card note-compose-card"><form class="note-form"><div class="note-fields"><label>Name<input name="name" type="text" autocomplete="name" required></label><label>Contact<input name="contact" type="text" placeholder="Email, WeChat, etc." required></label></div><textarea name="message" maxlength="120" placeholder="Write something…" aria-label="Note text" required></textarea><button type="submit" aria-label="Send note"><span aria-hidden="true">↵</span> send note</button></form><p class="note-delivery-notice">Send a note to daoyi. Your contact information stays private. A copy of the note is kept on this device.</p><p class="note-submit-status" role="status" aria-live="polite"></p></div><div class="note-cloud"><p class="panel-eyebrow">Pinned notes</p><div class="note-list"></div></div><div class="note-viewer" hidden><article><button type="button" class="note-viewer-close" data-note-viewer-close aria-label="Close enlarged note">×</button><p></p></article></div>`,
+      felt: `<div class="media-card note-compose-card"><form class="note-form"><div class="note-fields"><label>Name<input name="name" type="text" autocomplete="name" required></label><label>Contact<input name="contact" type="text" placeholder="Email, WeChat, etc." required></label></div><textarea name="message" maxlength="150" placeholder="Write something…" aria-label="Note text" required></textarea><button type="submit" aria-label="Send note"><span aria-hidden="true">↵</span> send note</button></form><p class="note-delivery-notice">Send a note to daoyi. Your contact information stays private. A copy of the note is kept on this device.</p><p class="note-submit-status" role="status" aria-live="polite"></p></div><div class="note-viewer" hidden><article><button type="button" class="note-viewer-close" data-note-viewer-close aria-label="Close enlarged note">×</button><header class="note-to">TO DAOYI</header><p></p><footer class="note-signature"></footer></article></div>`,
       book: this.bookPanelTemplate(),
       writing: this.linkPanelTemplate(ROOM_LINKS.writing, true),
     };
     this.panelContent.innerHTML = templates[kind] || "";
     this.panel.dataset.kind = kind;
     this.panel.hidden = false;
-    if (kind === "felt") this.bindNotes();
+    if (kind === "felt") {
+      this.bindNotes();
+      if (Number.isInteger(rule?.localFeltNoteIndex)) this.openStoredNote(rule.localFeltNoteIndex);
+    }
     if (kind === "music") this.bindMusicPanel();
     if (kind === "book") this.bindBookPanel();
     if (kind === "writing") this.bindWritingPanel();
@@ -839,20 +851,18 @@ export class RoomApp {
     });
   }
 
+  submitNote(note) { return submitFeltNote(note); }
+
+  syncPhysicalNotes() {
+    const notes = this.noteStore.read();
+    this.physicalFeltNotes.setNotes(notes);
+    this.root.dataset.localNoteCount = String(notes.length);
+  }
+
   bindNotes() {
-    const key = "daoyi-room-felt-notes-v2";
-    try { localStorage.removeItem("daoyi-room-felt-notes"); } catch { /* Local storage can be unavailable. */ }
     const form = this.panelContent.querySelector(".note-form");
-    const cloud = this.panelContent.querySelector(".note-cloud");
-    const list = this.panelContent.querySelector(".note-list");
-    const read = () => {
-      try {
-        const notes = JSON.parse(localStorage.getItem(key) || "[]");
-        return Array.isArray(notes) ? notes.filter((note) => typeof note === "string") : [];
-      } catch { return []; }
-    };
+    const read = () => this.noteStore.read();
     const viewer = this.panelContent.querySelector(".note-viewer");
-    const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
     const hashNote = (value) => {
       let hash = 2166136261;
       for (const char of value) {
@@ -881,23 +891,16 @@ export class RoomApp {
       const color = Math.floor(random() * 3);
       return { shape, color, style: `--note-x:${x.toFixed(2)}%;--note-y:${y.toFixed(2)}px;--note-r:${rotation.toFixed(2)}deg;--note-scale:${scale.toFixed(3)};--note-z:${1 + Math.floor(random() * 5)}` };
     };
-    const render = () => {
-      const notes = read();
-      const rows = Math.max(1, Math.ceil(notes.length / 4));
-      cloud?.style.setProperty("--note-rows", rows);
-      list.style.setProperty("--note-rows", rows);
-      list.innerHTML = notes.map((note, index) => {
-        const variant = noteStyle(note, index);
-        return `<button type="button" class="note-paper note-paper--shape-${variant.shape} note-paper--color-${variant.color}" style="${variant.style}" data-note-index="${index}" aria-label="Open note ${index + 1}"><span>${escape(note)}</span></button>`;
-      }).join("") || "<small>还没有纸条。</small>";
-      list.querySelectorAll("[data-note-index]").forEach((button) => button.addEventListener("click", () => {
-        const note = read()[Number(button.dataset.noteIndex)];
-        const paper = viewer?.querySelector("article");
-        if (!viewer || !paper || typeof note !== "string") return;
-        paper.className = `${button.classList[1]} ${button.classList[2]}`;
-        paper.querySelector("p").textContent = note;
-        viewer.hidden = false;
-      }));
+    this.openStoredNote = (index) => {
+      const note = read()[index], paper = viewer?.querySelector("article");
+      if (!paper || !feltNoteMessage(note)) return;
+      const variant = noteStyle(feltNoteMessage(note), index);
+      paper.className = `note-paper--shape-${variant.shape} note-paper--color-${variant.color}`;
+      paper.querySelector("p").textContent = feltNoteMessage(note);
+      paper.querySelector(".note-signature").textContent = feltNoteName(note);
+      this.panel.dataset.kind = "felt-note";
+      viewer.hidden = false;
+      paper.querySelector("[data-note-viewer-close]")?.focus({ preventScroll: true });
     };
     const fields = Object.fromEntries(["name", "contact", "message"].map((name) => [name, form.querySelector(`[name="${name}"]`)]));
     const submit = form.querySelector('button[type="submit"]');
@@ -921,7 +924,6 @@ export class RoomApp {
       form.setAttribute("aria-busy", String(Boolean(this.noteSubmitPending)));
       status.textContent = this.noteSubmitStatus || "";
       submit.innerHTML = this.noteSubmitPending ? "sending…" : '<span aria-hidden="true">↵</span> send note';
-      render();
     };
     form?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -940,14 +942,13 @@ export class RoomApp {
       this.noteSubmitStatus = "Sending…";
       this.updateNoteSubmissionUI?.();
       try {
-        await submitFeltNote(note);
-        try {
-          localStorage.setItem(key, JSON.stringify([...read(), note.message].slice(-12)));
-          this.noteSubmitStatus = "Sent. Thank you.";
-        } catch {
-          this.noteSubmitStatus = "Sent. A copy could not be saved on this device.";
-        }
+        await this.submitNote(note);
+        const saved = this.noteStore.appendAccepted(note.message, note.name);
+        this.noteSubmitStatus = saved ? "" : "Sent. A copy could not be saved on this device.";
         this.noteDraft = { name: "", contact: "", message: "" };
+        // Rendering a local paper cannot turn confirmed delivery back into a
+        // failed draft, which could otherwise cause an accidental resend.
+        try { this.syncPhysicalNotes(); } catch { this.noteSubmitStatus = "Sent. Your message was delivered, but the paper could not be displayed."; }
       } catch (error) {
         this.noteSubmitStatus = error.message;
       } finally {
@@ -957,7 +958,7 @@ export class RoomApp {
     });
     viewer?.querySelectorAll("[data-note-viewer-close]").forEach((button) => button.addEventListener("click", (event) => {
       event.stopPropagation();
-      viewer.hidden = true;
+      this.showPanel(null);
     }));
     this.updateNoteSubmissionUI();
   }
@@ -1220,6 +1221,13 @@ export class RoomApp {
     this.cameraDirector.setAspect(viewport.width / viewport.height);
     this.renderer.setSize(viewport.width, viewport.height);
     this.screens.resize(viewport.width, viewport.height);
+    this.loading.resize();
+    // Before the animation loop starts, resizing clears the prepared canvas.
+    // Redraw that same ready frame so the crossfade never reveals a stale size.
+    if (this.loading.sceneReady && this.lastFrameTime == null) {
+      this.renderer.render(this.scene, this.camera);
+      this.screens.render(true);
+    }
   }
 
   animate() {
@@ -1228,10 +1236,10 @@ export class RoomApp {
     const now = performance.now();
     const delta = Math.min(.05, Math.max(0, (now - (this.lastFrameTime ?? now)) / 1000));
     this.lastFrameTime = now;
-    this.cameraDirector.update(now);
+    const syncControls = this.cameraDirector.update(now);
     this.cameraDirector.ensureControlState();
     const cameraMoving = Boolean(this.cameraDirector.tween || this.cameraDirector.projectionTween);
-    if (!this.cameraDirector.tween && this.controls.enabled) this.controls.update();
+    if (!cameraMoving && (this.controls.enabled || syncControls)) this.controls.update();
     if (this.interactions) this.interactions.update();
     this.updateMotion(elapsed);
     this.lights.update(delta);

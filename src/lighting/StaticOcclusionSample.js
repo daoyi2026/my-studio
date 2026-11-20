@@ -1,9 +1,5 @@
 import * as THREE from "three";
 
-const BASE = "./public/assets/lighting/r7/";
-const SOURCE_SHA = "4ce10f1bb16cfe7fe89f90e25c171635f3392e2801e49fcbd6911f3a5baaf547";
-const PRODUCTION_MODEL_SHA = "4ce10f1bb16cfe7fe89f90e25c171635f3392e2801e49fcbd6911f3a5baaf547";
-
 async function sha256(bytes) {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (v) => v.toString(16).padStart(2, "0")).join("");
@@ -19,13 +15,17 @@ function requireContract(condition, message) {
   if (!condition) throw new Error(`R7 AO mapping rejected: ${message}`);
 }
 
-// The accepted R7 layer adds only ambient occlusion. Three.js's native aoMap
+// The accepted production layer adds only ambient occlusion. Three.js's native aoMap
 // affects indirect diffuse and environment specular, never direct light terms.
 export async function applyStaticOcclusionSample(room, modelUrl) {
+  const compatibleSha = "a09a008b7b9298edddacba4994755fa1ada00f02ad660b0221e1628d29fb9666";
+  const base = "./public/assets/lighting/r7/";
+  const sourceSha = compatibleSha;
+  const version = "r7-ao-phone-free-v1";
   try {
-    const manifest = await (await checkedFetch(`${BASE}manifest.json`)).json();
-    requireContract(manifest.version === "r7-ao-desk-vintage-v01" && manifest.sourceSha256 === SOURCE_SHA, "manifest identity");
-    requireContract(await sha256(await (await checkedFetch(modelUrl)).arrayBuffer()) === PRODUCTION_MODEL_SHA, "production GLB SHA-256");
+    const manifest = await (await checkedFetch(`${base}manifest.json`)).json();
+    requireContract(manifest.version === version && manifest.sourceSha256 === sourceSha, "manifest identity");
+    requireContract(await sha256(await (await checkedFetch(modelUrl)).arrayBuffer()) === compatibleSha, "compatible GLB SHA-256");
     requireContract(manifest.receivers.length === 10 && new Set(manifest.receivers.map((r) => r.name)).size === 10, "receiver set");
     room.updateMatrixWorld(true);
     const pending = [];
@@ -47,7 +47,7 @@ export async function applyStaticOcclusionSample(room, modelUrl) {
       requireContract(materials.every((m) => m?.isMeshStandardMaterial && !m.aoMap), `${entry.name} material/AO`);
       pending.push({ mesh, entry, materials });
     }
-    const textureBytes = await (await checkedFetch(`${BASE}${manifest.texture}`)).arrayBuffer();
+    const textureBytes = await (await checkedFetch(`${base}${manifest.texture}`)).arrayBuffer();
     requireContract(await sha256(textureBytes) === manifest.textureSha256, "atlas SHA-256");
     const blobUrl = URL.createObjectURL(new Blob([textureBytes], { type: "image/png" }));
     let texture;
@@ -78,7 +78,7 @@ export async function applyStaticOcclusionSample(room, modelUrl) {
       mesh.material = Array.isArray(mesh.material) ? copies : copies[0];
     }
     return { status: "applied", version: manifest.version, receivers: pending.map(({ mesh }) => mesh.name),
-      samples: manifest.samples, rayCount: manifest.rayCount, sourceSha256: SOURCE_SHA,
+      samples: manifest.samples, rayCount: manifest.rayCount, sourceSha256: sourceSha,
       suppressedContactNames: ["CONTACT_ASSET-v61-ClayCup-Clay cup"],
       technique: manifest.technique, textureBytes: manifest.textureBytes };
   } catch (error) {
